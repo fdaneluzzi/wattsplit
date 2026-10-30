@@ -73,9 +73,11 @@ escape hatch; it is not the plan.
    median of the preceding `ref_s`; reported only when both windows are flat
    relative to the step. A ramp yields one edge when it settles.
 4. **Attribute each edge** (`Disaggregator.on_edge`):
-   1. a **state device** whose entity changed state just before, with the right
-      sign. Ambiguous (two toggled together) → dropped, nothing learned;
-      implausible against its prior → falls through;
+   1. a **state device** that already knows its power (declared, pinned, a
+      prior, or an unambiguous learned value) and sees a step of that size
+      within the match window (default 90 s) after one of its state changes
+      *claims* the edge. Steps that are merely plausible are stored as
+      learning candidates but not claimed (see "Consensus learning" below);
    2. else the **latent device** with the smallest relative error against its
       declared levels, respecting its current level (a 3 200 → 5 500 W setting
       change is a 2 300 W step, not a new shower);
@@ -84,6 +86,81 @@ escape hatch; it is not the plan.
 6. **Publish** `Estimate(is_on, power_w, confidence, source)` per device.
    Energy (kWh) is integrated in the HA layer so it survives restarts and works
    with the Energy dashboard (`total_increasing`).
+
+### Measurement sources and roles
+
+The engine does not care what the hardware is. A home can have several solar
+systems, several inverters, several meters, per-phase sensors, a battery. The
+user lists every sensor that measures energy and gives each a **role**, which
+decides how its readings are read and used (`engine/plan.py`, pure Python):
+
+| Role | Meaning | Used for |
+|------|---------|----------|
+| `house` | a ready-made whole-house consumption sensor | the whole-house value; one detection channel |
+| `grid` | net power at the utility connection (import +, export −) | detection; part of rebuilt consumption |
+| `load` | power consumed on a phase, a circuit or the whole house | detection, each one its own channel |
+| `generation` | solar inverters, generators (positive when producing) | rebuilt consumption; **evidence only** |
+| `battery` | positive when discharging into the house | rebuilt consumption; **evidence only** |
+
+Consumption shown to the user (house power, untracked power, energy) is the
+`house` sensor if there is one, else the sum of the `load` sensors, else
+`grid + Σ generation + Σ battery`. Detection prefers `load` sensors, then
+`house`, then the `grid` meters; generation and battery are added to the
+detection signal only when they report about as fast as the slowest grid meter,
+otherwise they stay evidence. Several of any role are fine.
+
+| Your setup | Configure | What happens |
+|------------|-----------|--------------|
+| One whole-house sensor | `house` | one channel: step consensus; channel means only if the signal is quiet; otherwise an honest "don't know yet" |
+| Utility meter + one or more inverters (+ battery) | `grid` + `generation` (+ `battery`) | steps on the grid meter; every inverter and the battery are judged per appliance and their shares added |
+| Per-phase / per-circuit load sensors | `load` | every sensor its own channel; a quiet one isolates small appliances |
+| Two utility meters, a sub-board | several `grid` | each its own channel |
+| An appliance fed entirely by an inverter | `generation` | with an on/off entity: its power is learned from the inverter's response, if it runs at least `shortest_run_s` of that channel (~3.6 min at 61 s). With a declared power and no entity: detected from steps on the inverter, delayed by ~1.5 reports |
+
+**Evidence channels.** Generation and battery sensors are never searched for
+loads: a cloud steps an inverter exactly as a load would. For a state device
+each is judged on its own against the device's on/off changes (median change
+statistically clear, consistent across toggles), and the accepted shares are
+summed. For a latent device with a **declared** power, steps on an evidence
+channel may confirm it, but unexplained steps there never reach the discovery
+inbox (`on_edge(discover=False)`, and `replay(restricted_channels=…)`).
+
+**Limits stated up front.**
+
+- Each channel has its own windows, derived from its own reporting rate. A
+  channel that reports every 61 s resolves runs of about 3.6 minutes and longer
+  (`Timing.shortest_run_s`); shorter runs are measured on faster channels only,
+  and the estimate is then a lower bound.
+- A latent device whose power is split between channels with different lags
+  (part on the 15 s grid, part on the 61 s inverter) cannot be reassembled into
+  one step; one that sits wholly on one channel is fine.
+- A cloud *recovery* the same size as a declared device can confirm it by
+  chance on an evidence channel.
+- Sign conventions are assumed: generation positive when producing, battery
+  positive when discharging. If a sensor reports the opposite, its contribution
+  will not be accepted rather than subtracted.
+
+**Built to be distributed.** No entity names or hardware are assumed anywhere;
+all inputs are optional beyond one consumption source; reporting rates are
+measured, never configured; every assumption above is an option or shown in the
+`House power` sensor's attributes (`mode`, `detecting_on`, `evidence_only`,
+`update_period_s`, `min_step_w`, `shortest_run_s`); a diagnostics download
+(`diagnostics.py`) contains the plan, rates, timings, per-channel statistics and
+each appliance's evidence, for bug reports; strings are in English and
+Brazilian Portuguese. `hacs.json` declares the Home Assistant version it was
+actually tested on.
+
+### Accuracy you can check
+
+Accuracy is not asserted, it is measured on the user's own house. Any appliance
+that has **both an on/off entity and a power sensor** is ground truth. The
+engine is run on it a second time as if the sensor did not exist (a shadow
+`StateDevice` learns from the whole-house channels around its state changes,
+another measures the same thing from the real sensor, with identical windows)
+and the `Accuracy check` sensor reports the mean absolute error in percent,
+with per-appliance detail (estimate, truth, error, confidence, toggles, which
+channels). Only the channel-means evidence is scored; the shadow sees no step
+edges. The shadow restarts empty with the integration.
 
 ## 4. Power modes — when the user tells us the power, and when not
 
@@ -108,7 +185,15 @@ One-off events never become candidates (default minimum: 2 occurrences).
 
 ## 5. Learning over time
 
-1. **Online:** robust medians per device, updated on every attributed step.
+1. **Consensus learning (state devices):** a real house produces about one
+   unrelated step per minute and appliances lag their state change by 7–60 s
+   (found on the first real test, see below), so "the first plausible step" is
+   wrong. Each state change collects *all* sign-correct steps in the window;
+   the device's power is the magnitude that recurs across the most events.
+   Unrelated loads rarely repeat the same size after every toggle. Confidence
+   falls when a rival magnitude has similar support (an ambiguous consensus
+   never claims steps), so a wrong guess does not sound sure. On 60 simulated
+   busy houses it is right in 58 and the two misses report confidence < 0.1.
 2. **Discovery:** clustering of unexplained edges (§4).
 3. **Replay & refit:** the SQLite log can be re-fed to a fresh engine with
    different parameters (`replay(log, specs, match_window_s=…)`) and the results
@@ -131,30 +216,160 @@ attribution, plus state events) is tiny, survives recorder purges, and is enough
 to re-run attribution. SQLite is used for robustness and queryability; calls go
 through the executor. A retention policy (`EdgeLog.prune`) bounds growth.
 
-## 6. Known hard problems
+## 6. Sessions and user corrections
 
-1. **Meter/solar latency mismatch.** Meters update every second, inverters every
-   30–300 s; naive composition creates fake steps. Each input gets a **lag**
-   setting; the composer tracks staleness; auto-calibration estimates the lag by
-   matching edges of the inverter and the meter (or a measured device as
-   reference). Replay lets the user try a lag on past data and compare. This is
-   the biggest real-world error source and has its own M2 task.
-2. **Sparse updates.** HA sensors report on change, so a constant load emits no
+The two device families get two different promises:
+
+1. **Monitored by HA** (has an on/off entity, e.g. the office A/C). The user
+   does **not** declare a power. The state entity is the authority on *when*;
+   power is learned by consensus (§5). A declared power is only an optional
+   hint.
+2. **Not monitored** (shower, dishwasher). The user **declares the power**
+   (one value, or several for multi-stage devices); WattSplit infers *when*. It
+   keeps a history of runs, and the user can correct it. Discovery (§4) remains
+   as an assist for finding the number, not the default path.
+
+The hard case is look-alikes: a shower and a dishwasher that draw nearly the
+same watts cannot be told apart by power. They *can* be told apart by how long
+they run and when, so attribution moves from single steps to **sessions**.
+
+### Sessions
+
+A **session** is one continuous run of a device: start, end, level(s), energy.
+For a latent device it is a rise paired with its matching fall (plus level
+changes in between); for a state device it comes from the state changes. They
+live in the SQLite log (`sessions`: device, start, end, level, energy, status
+`open`/`closed`, `source` `auto`/`user`, per-candidate probabilities, label).
+
+### Scoring
+
+For each candidate device `d`, the session's score is
+
+`log P(level | d) + log P(duration | d) + log P(hour of week | d) + log prior(d)`
+
+normalised across all candidates plus "none of them".
+
+- `P(level | d)`: tolerance around the declared levels.
+- `P(duration | d)`: log-normal learned from the user's *confirmed* sessions,
+  with an optional declared "typical run time" as a weak starting prior.
+- `P(hour | d)`: smoothed 24-bin histogram, also from confirmed sessions.
+
+At the **rise** the duration is unknown, so the open session is scored on level
+and hour only. The device is shown as running when its probability passes a
+threshold, and the probability is exposed as an attribute. At the **fall** the
+session is rescored with its real duration and may be reassigned; history is
+corrected, while the live state during the first minutes may have been wrong.
+That trade-off is inherent and is shown to the user, not hidden.
+
+### Corrections
+
+The user can confirm a session, reassign it to another device, mark it "not one
+of mine", delete it, split or merge sessions, and adjust start/end. Each
+correction is stored as a **label**:
+
+- labelled sessions are ground truth: replay never overrides them;
+- only **confirmed** sessions update a device's duration and hour priors, so a
+  wrong guess nobody reviewed cannot reinforce itself (no confirmation bias);
+- once a device has a few confirmed sessions its priors become data-driven;
+  before that, level dominates and the UI says confidence is low.
+
+Because replay is deterministic and labels live in the log, changing a label or
+a parameter reprocesses history reproducibly.
+
+### Limits we state up front
+
+- Corrections change WattSplit's own history and future inference. Home
+  Assistant's long-term statistics for energy already published are **not**
+  rewritten automatically (an optional statistics-import step is an open
+  decision).
+- At setup, if a new latent device's power is within ±15 % of another's, the
+  user is warned that separation will depend on run time, hour and corrections.
+
+## 7. Known hard problems
+
+1. **Sensors report at very different rates.** A local meter may report every
+   second, a grid meter every 15 s, a cloud inverter every 60 s or slower, and
+   every household differs. Nothing is hard-coded: the HA layer measures each
+   input's real reporting period from `last_reported` (`RateTracker`) and derives
+   every window from it (`timing_for`): a step must outlast at least one more
+   report, per-channel steps merge within ~1.2 reports, and the averaging
+   windows around a state change grow to ~8 reports (never under 120 s). Timing
+   is recomputed as the measurements firm up, and the detector rebuilt when it
+   moves by more than 30 %. If a sensor is too slow to resolve a phenomenon (a
+   3-minute A/C cycle behind a 61 s sensor), the estimators do not reach
+   confidence and the device reports that it does not know; they never invent a
+   number.
+2. **Which signal to look for steps in.** Steps are best seen in the fastest,
+   least delayed signal that contains them. A slow generation sensor is kept out
+   of the detection signal: its delayed copy of the solar output adds steps of
+   its own (`grid + lagged solar` wanders by hundreds of watts). Detection runs
+   on the grid / house / per-channel signals; `grid + solar + battery` is only
+   composed for display, untracked power and energy, and detection uses it only
+   when solar reports about as fast as the grid. The `house` sensor passes through
+   a glitch filter: an exact 0 W after a loaded signal is held back for up to
+   90 s.
+
+   **But an appliance may be fed by the grid, the inverter, or both**, and the
+   engine must not assume where its power shows up. Generation (and battery)
+   sensors are therefore **evidence channels**: they are *never* searched for
+   steps (a cloud passing over the array is not a load), but for a state device
+   each one is judged on its own against the device's on/off changes, exactly
+   like a phase. Each channel's median change is accepted only if it is
+   statistically clear (z ≥ 6) and consistent across toggles, and the
+   accepted channels' shares are **summed**: 600 W on the grid plus 400 W on the
+   inverter is a 1000 W appliance. Which sensors count as evidence is an option
+   (default: the entry's solar/battery sensors, when detection runs on the
+   net-grid signal, which excludes generation; a house or composed signal
+   already contains them).
+
+   Every channel uses its own averaging windows, derived from its own reporting
+   rate, so a 61 s inverter does not slow a 15 s phase down. The cost is stated:
+   an appliance that cycles faster than a slow channel can resolve (a 3-minute
+   A/C versus ~8-minute windows on a 61 s inverter) is measured on the fast
+   channels only, and its estimate is a lower bound. Appliances that stay on
+   for 10+ minutes also get the slow channel's share.
+
+   What a given sensor *means* (net grid, load, per-phase net, inverter output)
+   is not guessed: the engine only reads which channels move with a state
+   change. In the author's data over 3.7 h, 60 s changes in the phase signals
+   track the grid sensor (r = 0.53) and not the inverter (r = 0.00), but that
+   says nothing about other installations.
+3. **Sparse updates.** HA sensors report on change, so a constant load emits no
    samples. The HA layer ticks on a timer and does sample-and-hold; the engine
-   sees a regular grid.
-3. **Simultaneous events.** Two steps within `settle_s` merge into one and are
-   reported unexplained rather than guessed; M3 adds a combination matcher.
-4. **Variable-power devices** (inverter A/C, multi-stage dishwasher). v1 learns
+   sees a regular grid. The tick (default 2 s) is independent of the sensors'
+   rates; it only needs to be faster than they are.
+4. **Simultaneous events.** A house always has several things switching. Two
+   steps inside the same meter report (15 s) arrive as one merged edge, so a
+   single step cannot tell them apart. What helps: (a) every merged edge keeps
+   its per-channel `parts`; (b) a state device with a clear *footprint* (the
+   channels it lives on, learned from its toggles) takes its own share of a
+   merged edge, and what is left goes on through the normal attribution. Real
+   case from the author's house: a 220 V pump (phases A + C, 2.3 kW) switched
+   off in the same report as the office A/C (phase B, 0.3 kW); the merged
+   -2616 W step matched nothing, but with the A/C's share taken out the
+   remaining -2279 W is recognisable as the pump. Unrelated interference that is
+   not simultaneous with a toggle averages out as events accumulate (robust
+   medians, error shrinking with the square root of the number of toggles); it
+   needs no clean experiment. Still open: an ordinary joint fit of all known
+   state indicators at once (M3), so that known loads are subtracted rather than
+   treated as noise.
+5. **Variable-power devices** (inverter A/C, multi-stage dishwasher). v1 learns
    one level per device; M3 adds NNLS multi-level learning.
-5. **Look-alike devices** (two showers) → time-of-day priors and user feedback.
-6. **Brazilian wiring (127/220 V, bi/tri-phase).** A 220 V shower steps two
-   phases. Per-phase aggregate support and per-device phase assignment are M3;
-   v1 treats the aggregate as one channel.
-7. **Honesty.** Every estimate carries `confidence` and `source`
+6. **Look-alike devices** (shower vs. dishwasher) → session-level scoring on
+   level, duration and hour of week, trained by user corrections (§6).
+7. **Wiring and measurement layouts (single-phase, split-phase, three-phase,
+   sub-panels).** The engine knows *channels*, not phases: one channel for a
+   single-sensor home, N for anything else. A load that spans channels (a 220 V
+   shower on two phases) is merged into one edge with its per-channel `parts`;
+   a state device's contribution is learned per channel and only channels where
+   it is statistically clear are counted. Noisy channels never veto quiet ones,
+   and a home with one noisy sensor still gets step-based learning or an honest
+   "don't know".
+8. **Honesty.** Every estimate carries `confidence` and `source`
    (`declared`, `learned_from_state`, `inferred_from_edges`,
    `awaiting_discovery`). The UI says "estimated", never "measured".
 
-## 7. User interface (no app, no add-on)
+## 8. User interface (no app, no add-on)
 
 Three layers, in order of effort:
 
@@ -166,6 +381,8 @@ Three layers, in order of effort:
    the repo (HACS ships it as-is). Screens:
    - **Timeline:** aggregate power with coloured bands per attributed device
      and an "untracked" remainder; click an edge to see why it was attributed.
+   - **Sessions:** the history of runs per device with probabilities; confirm,
+     reassign, mark "not mine", delete, split / merge, adjust times (§6).
    - **Discovery inbox:** candidates with level, count, duration, typical hour;
      name / merge / dismiss.
    - **Devices:** power mode, levels, pin, confidence over time.
@@ -175,7 +392,7 @@ Three layers, in order of effort:
 The panel is real frontend work and is scheduled with the engine's learning
 features (M2), not deferred.
 
-## 8. Entities created
+## 9. Entities created
 
 Per latent device: `binary_sensor.<name>_running`, `sensor.<name>_power` (W),
 `sensor.<name>_energy` (kWh).
@@ -188,7 +405,7 @@ Global: `sensor.wattsplit_untracked_power`, `…_untracked_energy`,
 
 Inferred entities expose `confidence`, `source` and `power_mode` attributes.
 
-## 9. Positioning
+## 10. Positioning
 
 - **Powercalc** estimates power from fixed profiles (mostly lights). It never
   looks at the aggregate, so it cannot discover a shower. Complementary: a
@@ -199,17 +416,98 @@ Inferred entities expose `confidence`, `source` and `power_mode` attributes.
   works the moment you type the shower's wattage, and uses everything HA
   already knows.
 
-## 10. Roadmap
+## 11. Roadmap
 
 | Milestone | Content | Status |
 |-----------|---------|--------|
-| **M0 — engine core** | composer, step detector, latent + state devices, power modes, discovery, SQLite edge log, replay, simulator, tests | **done (17 tests)** |
-| **M1 — HA shell** | HACS metadata, config flow + subentries, coordinator with timer sampling, entities, state-event capture, Store persistence | next |
-| **M2 — learning + panel** | per-input lag + auto-calibration, recorder bootstrap, sidebar panel (timeline, inbox, devices, tune & replay), diagnostics/self-validation | |
-| **M3 — harder devices** | NNLS multi-level, combination matcher, per-phase aggregates, feedback actions, model snapshots | |
+| **M0 — engine core** | composer, step detector, latent + state devices, power modes, discovery, SQLite edge log, replay, simulator, tests | **done (21 tests)** |
+| **M1 — HA shell** | config flow + options + appliance subentries, coordinator with timer sampling, entities (attached to the source device for state-only appliances), state-event capture, `pin` / `assign_candidate` actions, en + pt-BR. Learned state is rebuilt by replaying the SQLite log on startup, so no separate `Store` is needed. | **deployed on HA 2026.10.4; learning from real toggles not yet observed** |
+| **M2a — engine: channels & sessions** | (1) multiple input channels (per phase) with noise-adaptive thresholds; (2) difference-of-means estimator for state devices; (3) bad-reading rejection and per-input rates/lag; (4) variable-power model; (5) session ledger, labels and session-level scoring; recorder bootstrap. Order set by the first real-world tests (§13). Items (1)–(3) are built and tested (53 tests; 100/100 simulated three-channel houses, 96/100 single-channel, never confidently wrong); validated on real history at the real 15 s / 61 s rates; wired into the HA layer, **not yet verified live**. | **in progress** |
+| **M2b — panel** | sidebar panel: timeline, sessions & corrections, discovery inbox, devices, tune & replay; websocket API; diagnostics / self-validation | |
+| **M3 — harder devices** | NNLS multi-level, combination matcher, per-phase aggregates, model snapshots, optional statistics import for corrected energy | |
 | **M4 — community** | device-profile library (JSON, like Powercalc's), docs, HACS default-repo submission, Silver quality scale | |
 
-## 11. Open decisions
+## 12. Home Assistant API notes (verified against 2026.10.4)
+
+- Schemas: HA moved to `probatio` in 2026.9; `import voluptuous as vol` still
+  works through an alias, so the integration keeps that import.
+- `async_device_info_to_link_from_entity` is deprecated and returns `None`. To
+  put estimates on an existing device, set `entity.device_entry` (via
+  `async_entity_id_to_device`). Confirmed live: the A/C sensors share the
+  `climate` entity's device.
+- Appliances are config **subentries** (`ConfigSubentryFlow`); entities are
+  added with `config_subentry_id`; an update listener reloads the entry, which
+  replays the log with the new specs.
+- Scripted subentry flows over REST: send JSON as UTF-8 (a Windows shell mangles
+  accented names; use Python or a file).
+
+## 13. First real-world test (office A/C, 2026-10-30)
+
+Six toggles on a real inverter A/C in a busy house: 26 steps in 26 minutes,
+the A/C's own step arrived 7–64 s after the state change, and the composed
+house sensor read 0 W for 30 s or more twice (producing fake ±1 kW steps). The
+original 15 s first-plausible-step learner got 1 of 6 events; replaying the
+same log with consensus learning gives 345 W from 3 agreeing events, at low
+confidence (0.15), which is the honest answer for six toggles. Open issue: the
+zero readings should be rejected or bridged by the composer (M2).
+
+### Second round: what the signal actually looks like
+
+Six more toggles, this time compared against the raw sensors:
+
+- **Update rates:** grid meter every ~15 s (max 60 s), solar inverter every
+  ~61 s. Sampling at 2 s oversamples; the real resolution is ~15 s.
+- **The composed house signal is the worst available.** Net export is ~2–3 kW
+  and follows clouds instantly on the grid meter while the inverter reports a
+  minute late, so `grid + solar` wanders by hundreds of watts, the same order
+  as a small appliance. The detector found 3 steps in 21 minutes and only 2
+  of 6 toggles produced a candidate.
+- **Per-phase data isolates the appliance.** The office A/C sits on phase B,
+  which idles at ~145–160 W while phases A and C carry 1–1.7 kW of other loads
+  and solar. On phase B every toggle is visible (+142, +165, −166, −130, −141,
+  −315 W steps).
+- **The A/C is not a constant load.** It starts near 150 W and ramps to
+  300–570 W as the inverter compressor speeds up, so one number is a rough
+  average.
+- **On/off mean difference beats step matching.** Comparing the mean power of
+  each ON window with its neighbouring OFF windows (skipping the first 40 s)
+  over the 6 cycles gives, per signal: phase B **176 W, spread 43 W**; grid
+  total 276 W, spread 366 W (one cycle even the wrong sign); composed house
+  443 W, spread 169 W. The earlier step-consensus value (333 W) was inflated
+  by ramp peaks.
+
+Consequences, in priority order (M2a): (1) **multiple input channels**
+(per phase, each with its own noise-adaptive threshold) instead of a single
+aggregate; (2) a **difference-of-means estimator** for state devices, with
+edges kept for latent devices; (3) reject/bridge impossible readings and
+account for per-input update rates; (4) model non-constant power (mean plus a
+time-since-start profile); then sessions and corrections (§6).
+
+### Third round: live, three phases as channels
+
+Eight toggles with the new engine running on the three phase sensors (15 s).
+Result: **7 valid toggles, no channel accepted, confidence 0.06** (the old
+step-consensus value of 345 W stays as a weak fallback). Reasons, from the log:
+
+- One toggle pair was lost for a good reason: the climate entity flipped
+  off, on, off within 11 s, and the windows around such flaps are too short to
+  trust.
+- The appliance does not have one power. Its contribution on phase B over seven
+  toggles was +65, +322, +197, +205, +422, +387, +185 W (median 205, scatter
+  174), and phase C moved with it (median +242 W, consistent on 6 of 7). A 220 V
+  inverter unit sharing phases B and C at a varying thermal load fits this.
+  With scatter this large, seven toggles give z of about 2.5 to 3.7, below the
+  bar of 6, so the engine declines to commit. Reaching it needs more toggles
+  (roughly 30), or a model of why the power varies (M3).
+- The display-only provisional value is now the sum of channels that lean the
+  same way on most toggles: 447 W (B + C), consistent with the 276 to 443 W
+  seen from the composite signals in the earlier rounds. A noise channel no
+  longer inflates it (it was 517 W when every channel was summed).
+
+Take-away: for an appliance whose power is genuinely variable, the engine is
+slow and says so, rather than committing to a number the data does not support.
+
+## 14. Open decisions
 
 - License (MIT vs. Apache-2.0).
 - GitHub owner/repo and `codeowners` for the manifest (placeholders today).

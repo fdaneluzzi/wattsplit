@@ -1,0 +1,164 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Measurement sources",
+        "description": "Tell WattSplit what measures energy in the home. Sensors are grouped by what they measure, and you can add as many as you have: several inverters, several meters, per-phase sensors. You need at least one sensor that shows consumption or grid power.",
+        "data": {
+          "house_entity": "House consumption sensor (optional)",
+          "grid_entity": "Grid / utility meters",
+          "load_entities": "Load sensors (per phase, circuit or whole house)",
+          "generation_entities": "Solar inverters / generation",
+          "battery_entity": "Battery sensors",
+          "invert_grid": "Grid meters report export as positive"
+        },
+        "data_description": {
+          "house_entity": "A ready-made total consumption sensor. If set, it is used as the whole-house value.",
+          "grid_entity": "Net power at the connection to the utility: positive when importing, negative when exporting.",
+          "load_entities": "Power consumed on a phase, a circuit or the whole house, whatever supplies it. Each one is watched separately, so a quiet circuit shows small appliances.",
+          "generation_entities": "Anything that produces power for the house. Used as evidence of where an appliance gets its power, never searched for loads.",
+          "battery_entity": "Positive when the battery feeds the house, negative when charging."
+        }
+      }
+    },
+    "error": {
+      "no_source": "Pick at least one house, grid or load sensor."
+    },
+    "abort": {
+      "single_instance_allowed": "WattSplit is already set up."
+    }
+  },
+  "config_subentries": {
+    "appliance": {
+      "initiate_flow": {
+        "user": "Add appliance",
+        "reconfigure": "Reconfigure appliance"
+      },
+      "entry_type": "Appliance",
+      "step": {
+        "user": {
+          "title": "Add appliance",
+          "description": "Link an on/off entity, a power sensor, both, or neither. With neither, WattSplit infers the appliance from steps in the house signal.",
+          "data": {
+            "name": "Name",
+            "state_entity": "On/off entity",
+            "power_entity": "Power sensor",
+            "power_mode": "Power mode",
+            "power_levels": "Power (W)"
+          },
+          "data_description": {
+            "state_entity": "Optional. Lets WattSplit learn the appliance's power from when it switches.",
+            "power_entity": "Optional. If the appliance already has a power sensor, WattSplit only uses it to subtract it from the house signal.",
+            "power_mode": "Known: use the power below. Prior: use it as a hint and refine it. Learn: declare nothing. Pinned: a learned value you froze.",
+            "power_levels": "One value, or several separated by commas (for example 3200, 5500 for a two-stage shower)."
+          }
+        },
+        "reconfigure": {
+          "title": "Reconfigure appliance",
+          "data": {
+            "name": "Name",
+            "state_entity": "On/off entity",
+            "power_entity": "Power sensor",
+            "power_mode": "Power mode",
+            "power_levels": "Power (W)"
+          }
+        }
+      },
+      "error": {
+        "invalid_power": "Enter positive numbers in watts, separated by commas.",
+        "levels_required": "This power mode needs a power value."
+      },
+      "abort": {
+        "reconfigure_successful": "Appliance updated."
+      }
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "WattSplit options",
+        "description": "Tell WattSplit what measures energy in the home. Sensors are grouped by what they measure, and you can add as many as you have: several inverters, several meters, per-phase sensors. You need at least one sensor that shows consumption or grid power.",
+        "data": {
+          "house_entity": "House consumption sensor (optional)",
+          "grid_entity": "Grid / utility meters",
+          "load_entities": "Load sensors (per phase, circuit or whole house)",
+          "generation_entities": "Solar inverters / generation",
+          "battery_entity": "Battery sensors",
+          "invert_grid": "Grid meters report export as positive",
+          "evidence": "Evidence sensors (optional)",
+          "sample_interval": "Sampling interval",
+          "min_step_w": "Smallest step to detect"
+        },
+        "data_description": {
+          "house_entity": "A ready-made total consumption sensor. If set, it is used as the whole-house value.",
+          "grid_entity": "Net power at the connection to the utility: positive when importing, negative when exporting.",
+          "load_entities": "Power consumed on a phase, a circuit or the whole house, whatever supplies it. Each one is watched separately, so a quiet circuit shows small appliances.",
+          "generation_entities": "Anything that produces power for the house. Used as evidence of where an appliance gets its power, never searched for loads.",
+          "battery_entity": "Positive when the battery feeds the house, negative when charging.",
+          "evidence": "Sensors that may carry part of an appliance's power, such as a solar inverter or a battery. Each one is checked against each appliance's on/off changes and counts only if it clearly follows them; its share is then added. They are never searched for loads, so a passing cloud is not mistaken for one. Leave empty to use the generation and battery sensors above when detection runs on the grid signal.",
+          "sample_interval": "How often the engine looks at its inputs. How long it averages is set automatically from how often each sensor actually reports.",
+          "min_step_w": "A floor. Each channel raises it automatically to clear its own noise."
+        }
+      }
+    },
+    "error": {
+      "no_source": "Pick at least one house, grid or load sensor."
+    }
+  },
+  "selector": {
+    "power_mode": {
+      "options": {
+        "known": "Known",
+        "prior": "Prior (hint, refined)",
+        "learn": "Learn",
+        "pinned": "Pinned"
+      }
+    }
+  },
+  "entity": {
+    "sensor": {
+      "house_power": {
+        "name": "House power"
+      },
+      "untracked_power": {
+        "name": "Untracked power"
+      },
+      "untracked_energy": {
+        "name": "Untracked energy"
+      },
+      "candidates": {
+        "name": "Discovered loads"
+      },
+      "estimated_power": {
+        "name": "Estimated power"
+      },
+      "estimated_energy": {
+        "name": "Estimated energy"
+      },
+      "accuracy_check": {
+        "name": "Accuracy check"
+      }
+    },
+    "binary_sensor": {
+      "running": {
+        "name": "Running"
+      }
+    }
+  },
+  "services": {
+    "pin": {
+      "name": "Pin learned power",
+      "description": "Freeze the power WattSplit has learned for this appliance so it is never changed by learning."
+    },
+    "assign_candidate": {
+      "name": "Assign discovered load",
+      "description": "Tell a waiting appliance which discovered load it is.",
+      "fields": {
+        "level_w": {
+          "name": "Power",
+          "description": "Power of the discovered load, in watts."
+        }
+      }
+    }
+  }
+}

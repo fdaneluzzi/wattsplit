@@ -5,12 +5,15 @@ later published as its own package.
 """
 
 from .composer import house_power_w
-from .detector import StepDetector
+from .detector import GlitchFilter, MultiChannelDetector, StepDetector
 from .disaggregator import Disaggregator
 from .discovery import Candidate, Discoverer
-from .models import DeviceSpec, Edge, Estimate, PowerMode
+from .models import DeviceSpec, Edge, Estimate, PowerMode, Toggle
+from .plan import Plan, Sources, channel_values, choose_plan, consumption_w
 from .replay import replay
 from .store import EdgeLog
+from .timing import RateTracker, Timing, timing_for
+from .validation import Validator
 
 __all__ = [
     "Candidate",
@@ -20,8 +23,20 @@ __all__ = [
     "Edge",
     "EdgeLog",
     "Estimate",
+    "GlitchFilter",
+    "MultiChannelDetector",
+    "Plan",
     "PowerMode",
+    "RateTracker",
+    "Sources",
     "StepDetector",
+    "Timing",
+    "Toggle",
+    "Validator",
+    "channel_values",
+    "choose_plan",
+    "consumption_w",
     "house_power_w",
     "replay",
+    "timing_for",
 ]

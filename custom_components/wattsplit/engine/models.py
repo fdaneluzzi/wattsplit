@@ -17,16 +17,37 @@ class PowerMode(StrEnum):
 
 @dataclass(frozen=True, slots=True)
 class Edge:
-    """A settled step in the aggregate power signal.
+    """A settled step in the measured power.
 
     ``ts`` is when the new level started; ``seen_ts`` is when the detector
     could first report it. Replay orders edges by ``seen_ts`` so it sees
     exactly what the live engine saw.
+
+    ``delta_w`` is the total step. With several measurement channels it is the
+    sum of the significant per-channel steps, listed in ``parts``.
     """
 
     ts: float
     delta_w: float
     seen_ts: float | None = None
+    parts: tuple[tuple[str, float], ...] = ()
+
+
+@dataclass(frozen=True, slots=True)
+class Toggle:
+    """What the measured channels did around one state change of a device.
+
+    ``before`` and ``after`` are per-channel mean power (W) in a window before
+    the change and a window after it (skipping the start-up transient). The
+    difference is the device's contribution on that channel.
+    """
+
+    device_id: str
+    ts: float
+    is_on: bool
+    before: tuple[tuple[str, float], ...]
+    after: tuple[tuple[str, float], ...]
+    seen_ts: float
 
 
 @dataclass(frozen=True, slots=True)
@@ -38,7 +59,7 @@ class DeviceSpec:
     - ``has_power``: a real power sensor exists. Its reading is subtracted from
       the aggregate and never estimated.
     - ``has_state``: an entity reports on/off. Power is *learned* from the
-      aggregate steps that coincide with state changes.
+      change in the measured channels around each state change.
     - neither: a latent device. On/off *and* power are inferred from steps in
       the aggregate that match ``power_levels_w``. With no levels declared the
       device waits for a discovered candidate to be assigned to it.
@@ -79,3 +100,5 @@ class Estimate:
     confidence: float  # 0..1
     # "declared" | "learned_from_state" | "inferred_from_edges" | "awaiting_discovery"
     source: str
+    # per-channel contribution the estimate is made of, e.g. (("phase_b", 176.0),)
+    channels: tuple[tuple[str, float], ...] = ()

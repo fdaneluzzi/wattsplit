@@ -1,9 +1,16 @@
 import pytest
-from sim import DT, Load, aggregate, run
+from sim import (
+    DT,
+    Load,
+    aggregate,
+    busy_ac_house,
+    run,
+)
 
 from engine import (
     DeviceSpec,
     Disaggregator,
+    Edge,
     EdgeLog,
     PowerMode,
     StepDetector,
@@ -27,6 +34,22 @@ def _ac_cycles(watts: float, n: int = 6):
         loads.append(Load(start, start + 400, watts))
         events += [(start, "ac", True), (start + 400, "ac", False)]
     return loads, events
+
+
+def test_step_consensus_learns_a_small_ac_in_a_busy_single_channel_house():
+    right, confident_wrong = 0, []
+    for seed in range(1, 31):
+        samples, events = busy_ac_house(seed)
+        diss = Disaggregator([DeviceSpec("ac", "A/C", has_state=True)])
+        est = run(samples, diss, events)[-1][1]["ac"]
+        learned = diss._state["ac"].learned_w
+        if learned and abs(learned - 340) <= 0.2 * 340:
+            right += 1
+        elif learned is not None and est.confidence > 0.3:
+            confident_wrong.append((seed, learned, est.confidence))
+
+    assert right >= 27
+    assert not confident_wrong, confident_wrong  # when unsure, it says so
 
 
 def test_known_state_device_uses_declared_power_and_never_learns():
@@ -98,11 +121,7 @@ def test_latent_device_without_power_waits_then_gets_assigned_a_candidate():
 def test_unmatched_state_step_is_not_lost_to_discovery():
     ac = DeviceSpec("ac", "A/C", (900,), has_state=True)
     diss = Disaggregator([ac])
-    run(
-        aggregate(900, [Load(300, 600, 6400)]),
-        diss,
-        [(300, "ac", True)],
-    )
+    run(aggregate(900, [Load(300, 600, 6400)]), diss, [(300, "ac", True)])
     (cand,) = diss.candidates(min_count=1)
     assert cand.level_w == pytest.approx(6400, rel=0.05)
 
@@ -116,6 +135,8 @@ def _logged_run(specs, samples, state_events, log):
             ev_ts, dev, on = events.pop(0)
             diss.on_state(dev, on, ev_ts)
             log.add_state(ev_ts, dev, on)
+        for toggle in diss.on_sample(ts, {"total": power}):
+            log.add_toggle(toggle)
         if edge := det.update(ts, power):
             log.add_edge(edge, diss.on_edge(edge))
     return diss
@@ -139,27 +160,55 @@ def test_replay_from_sqlite_log_reproduces_live_result(tmp_path):
 
     assert replayed.snapshot() == live.snapshot()
     assert replayed.snapshot()["ac"].power_w == 0  # off at the end
-    assert reopened.edges(unexplained_only=True) == []
+    assert replayed._state["ac"].learned_w == pytest.approx(900, rel=0.05)
+    # Early A/C steps, seen before anything was learned, stay unexplained;
+    # once it knows its power every later step is claimed.
+    unexplained = reopened.edges(unexplained_only=True)
+    assert unexplained and all(e.ts < 2400 for e, _ in unexplained)
 
 
 def test_replay_can_try_a_different_parameter():
-    specs = [DeviceSpec("ac", "A/C", has_state=True)]
+    ac = DeviceSpec("ac", "A/C", (900,), has_state=True, power_mode=PowerMode.KNOWN)
     log = EdgeLog()
-    # State flips 30 s before the step shows up (slow meter).
-    ac_loads = [Load(330, 730, 900)]
-    _logged_run(specs, aggregate(1200, ac_loads), [(300, "ac", True)], log)
+    # The state flips 30 s before the step shows up (slow meter).
+    _logged_run([ac], aggregate(1200, [Load(330, 730, 900)]), [(300, "ac", True)], log)
 
-    strict = replay(log, specs, match_window_s=10.0)
-    lenient = replay(log, specs, match_window_s=60.0)
+    strict = replay(log, [ac], match_window_s=10.0)
+    lenient = replay(log, [ac], match_window_s=60.0)
 
-    assert strict.snapshot()["ac"].confidence == 0.0
-    assert lenient.snapshot()["ac"].confidence > 0.0
+    # Too strict: the step is nobody's, and pairs with its fall into a candidate.
+    assert strict.candidates(min_count=1)
+    # Wide enough: the A/C claims the step, so nothing is left to discover.
+    assert not lenient.candidates(min_count=1)
+
+
+def test_sync_state_sets_on_off_without_creating_a_transition():
+    ac = DeviceSpec("ac", "A/C", (900,), has_state=True)
+    diss = Disaggregator([ac])
+    diss.sync_state("ac", True)
+    assert diss.snapshot()["ac"].is_on
+    # No state change happened, so a 900 W step is NOT attributed to the A/C.
+    assert diss.on_edge(Edge(10.0, 900.0, 12.0)) is None
+
+
+def test_spec_lookup_reflects_pin_and_assignment():
+    ac = DeviceSpec("ac", "A/C", has_state=True)
+    dish = DeviceSpec("dish", "Dishwasher")
+    diss = Disaggregator([ac, dish])
+    assert diss.is_latent("dish") and not diss.is_latent("ac")
+
+    diss.assign_candidate("dish", 4400)
+    assert diss.spec("dish").power_levels_w == (4400,)
+
+    loads, events = _ac_cycles(900, n=4)
+    run(aggregate(4000, loads), diss, events)
+    diss.pin("ac")
+    assert diss.spec("ac").mode is PowerMode.PINNED
+    assert diss.spec("ac").power_levels_w[0] == pytest.approx(900, rel=0.05)
 
 
 def test_log_prune_drops_old_rows():
     log = EdgeLog()
-    from engine import Edge
-
     log.add_edge(Edge(10, 500, 12), None)
     log.add_edge(Edge(5000, 500, 5002), None)
     log.add_state(10, "ac", True)
@@ -167,3 +216,22 @@ def test_log_prune_drops_old_rows():
     assert log.prune(before_ts=1000) == 2
     assert [e.ts for e, _ in log.edges()] == [5000]
     assert log.state_events() == []
+
+
+def test_log_roundtrips_channel_parts_and_migrates_old_files(tmp_path):
+    import sqlite3
+
+    path = tmp_path / "old.db"
+    old = sqlite3.connect(path)  # a log written before edges had `parts`
+    old.executescript(
+        "CREATE TABLE edges (ts REAL, seen_ts REAL, delta_w REAL, device_id TEXT);"
+        "INSERT INTO edges VALUES (1, 2, 300, NULL);"
+    )
+    old.commit()
+    old.close()
+
+    log = EdgeLog(path)
+    log.add_edge(Edge(10, 5500, 12, (("a", 2750.0), ("b", 2750.0))), "shower")
+    (first, _), (second, dev) = log.edges()
+    assert first.parts == () and first.delta_w == 300
+    assert second.parts == (("a", 2750.0), ("b", 2750.0)) and dev == "shower"

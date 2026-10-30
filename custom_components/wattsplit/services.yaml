@@ -1,0 +1,21 @@
+pin:
+  target:
+    entity:
+      integration: wattsplit
+      domain: sensor
+
+assign_candidate:
+  target:
+    entity:
+      integration: wattsplit
+      domain: sensor
+  fields:
+    level_w:
+      required: true
+      example: 4400
+      selector:
+        number:
+          min: 50
+          max: 20000
+          unit_of_measurement: W
+          mode: box

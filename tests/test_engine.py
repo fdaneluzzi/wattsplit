@@ -18,6 +18,15 @@ def test_detector_reports_one_clean_edge_per_step():
     assert edges[1].ts == pytest.approx(200, abs=DT)
 
 
+def test_detector_reset_drops_the_buffer():
+    det = StepDetector(dt_s=DT)
+    for i in range(20):
+        det.update(i * DT, 300)
+    det.reset()
+    # A jump right after a reset has no "before" window to compare against.
+    assert not [e for i in range(20) if (e := det.update(100 + i * DT, 2300))]
+
+
 def test_detector_ignores_steps_below_threshold():
     samples = aggregate(300, [Load(100, 200, 120)], noise_w=5)
     det = StepDetector(dt_s=DT, min_step_w=300)

@@ -1,0 +1,164 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Fontes de medição",
+        "description": "Diga ao WattSplit o que mede energia na casa. Os sensores são agrupados pelo que medem, e você pode adicionar quantos tiver: vários inversores, vários medidores, sensores por fase. É preciso pelo menos um sensor que mostre o consumo ou a potência da rede.",
+        "data": {
+          "house_entity": "Sensor de consumo da casa (opcional)",
+          "grid_entity": "Medidores da rede / concessionária",
+          "load_entities": "Sensores de carga (por fase, circuito ou casa toda)",
+          "generation_entities": "Inversores solares / geração",
+          "battery_entity": "Sensores de bateria",
+          "invert_grid": "Os medidores da rede informam exportação como positivo"
+        },
+        "data_description": {
+          "house_entity": "Um sensor de consumo total já pronto. Se informado, é usado como o valor da casa inteira.",
+          "grid_entity": "Potência líquida na ligação com a concessionária: positiva ao importar, negativa ao exportar.",
+          "load_entities": "Potência consumida numa fase, num circuito ou na casa toda, seja qual for a fonte. Cada um é observado separadamente, então um circuito quieto mostra aparelhos pequenos.",
+          "generation_entities": "Qualquer coisa que produza energia para a casa. Serve de evidência de onde um aparelho tira a sua potência, nunca para procurar cargas.",
+          "battery_entity": "Positivo quando a bateria alimenta a casa, negativo ao carregar."
+        }
+      }
+    },
+    "error": {
+      "no_source": "Escolha pelo menos um sensor da casa, da rede ou de carga."
+    },
+    "abort": {
+      "single_instance_allowed": "O WattSplit já está configurado."
+    }
+  },
+  "config_subentries": {
+    "appliance": {
+      "initiate_flow": {
+        "user": "Adicionar aparelho",
+        "reconfigure": "Reconfigurar aparelho"
+      },
+      "entry_type": "Aparelho",
+      "step": {
+        "user": {
+          "title": "Adicionar aparelho",
+          "description": "Vincule uma entidade liga/desliga, um sensor de potência, os dois ou nenhum. Sem nenhum, o WattSplit infere o aparelho pelos degraus no sinal da casa.",
+          "data": {
+            "name": "Nome",
+            "state_entity": "Entidade liga/desliga",
+            "power_entity": "Sensor de potência",
+            "power_mode": "Modo de potência",
+            "power_levels": "Potência (W)"
+          },
+          "data_description": {
+            "state_entity": "Opcional. Permite aprender a potência do aparelho a partir de quando ele liga e desliga.",
+            "power_entity": "Opcional. Se o aparelho já tem sensor de potência, o WattSplit só o usa para descontar do sinal da casa.",
+            "power_mode": "Conhecida: usa a potência abaixo. Dica: usa como ponto de partida e refina. Aprender: nada declarado. Fixada: um valor aprendido que você congelou.",
+            "power_levels": "Um valor, ou vários separados por vírgula (ex.: 3200, 5500 para um chuveiro de duas temperaturas)."
+          }
+        },
+        "reconfigure": {
+          "title": "Reconfigurar aparelho",
+          "data": {
+            "name": "Nome",
+            "state_entity": "Entidade liga/desliga",
+            "power_entity": "Sensor de potência",
+            "power_mode": "Modo de potência",
+            "power_levels": "Potência (W)"
+          }
+        }
+      },
+      "error": {
+        "invalid_power": "Informe números positivos em watts, separados por vírgula.",
+        "levels_required": "Este modo de potência exige um valor de potência."
+      },
+      "abort": {
+        "reconfigure_successful": "Aparelho atualizado."
+      }
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Opções do WattSplit",
+        "description": "Diga ao WattSplit o que mede energia na casa. Os sensores são agrupados pelo que medem, e você pode adicionar quantos tiver: vários inversores, vários medidores, sensores por fase. É preciso pelo menos um sensor que mostre o consumo ou a potência da rede.",
+        "data": {
+          "house_entity": "Sensor de consumo da casa (opcional)",
+          "grid_entity": "Medidores da rede / concessionária",
+          "load_entities": "Sensores de carga (por fase, circuito ou casa toda)",
+          "generation_entities": "Inversores solares / geração",
+          "battery_entity": "Sensores de bateria",
+          "invert_grid": "Os medidores da rede informam exportação como positivo",
+          "evidence": "Sensores de evidência (opcional)",
+          "sample_interval": "Intervalo de amostragem",
+          "min_step_w": "Menor degrau a detectar"
+        },
+        "data_description": {
+          "house_entity": "Um sensor de consumo total já pronto. Se informado, é usado como o valor da casa inteira.",
+          "grid_entity": "Potência líquida na ligação com a concessionária: positiva ao importar, negativa ao exportar.",
+          "load_entities": "Potência consumida numa fase, num circuito ou na casa toda, seja qual for a fonte. Cada um é observado separadamente, então um circuito quieto mostra aparelhos pequenos.",
+          "generation_entities": "Qualquer coisa que produza energia para a casa. Serve de evidência de onde um aparelho tira a sua potência, nunca para procurar cargas.",
+          "battery_entity": "Positivo quando a bateria alimenta a casa, negativo ao carregar.",
+          "evidence": "Sensores que podem carregar parte da potência de um aparelho, como um inversor solar ou uma bateria. Cada um é comparado com o liga/desliga de cada aparelho e só conta se o acompanhar com clareza; a parcela dele é então somada. Eles nunca são usados para procurar cargas, então uma nuvem passando não é confundida com uma. Deixe vazio para usar os sensores de geração e bateria acima quando a detecção usa o sinal da rede.",
+          "sample_interval": "Com que frequência o motor olha as entradas. O tempo de média é ajustado automaticamente pela frequência com que cada sensor realmente reporta.",
+          "min_step_w": "Um piso. Cada canal o eleva sozinho para superar o próprio ruído."
+        }
+      }
+    },
+    "error": {
+      "no_source": "Escolha pelo menos um sensor da casa, da rede ou de carga."
+    }
+  },
+  "selector": {
+    "power_mode": {
+      "options": {
+        "known": "Conhecida",
+        "prior": "Dica (refinada)",
+        "learn": "Aprender",
+        "pinned": "Fixada"
+      }
+    }
+  },
+  "entity": {
+    "sensor": {
+      "house_power": {
+        "name": "Potência da casa"
+      },
+      "untracked_power": {
+        "name": "Potência não rastreada"
+      },
+      "untracked_energy": {
+        "name": "Energia não rastreada"
+      },
+      "candidates": {
+        "name": "Cargas descobertas"
+      },
+      "estimated_power": {
+        "name": "Potência estimada"
+      },
+      "estimated_energy": {
+        "name": "Energia estimada"
+      },
+      "accuracy_check": {
+        "name": "Verificação de acurácia"
+      }
+    },
+    "binary_sensor": {
+      "running": {
+        "name": "Em funcionamento"
+      }
+    }
+  },
+  "services": {
+    "pin": {
+      "name": "Fixar potência aprendida",
+      "description": "Congela a potência que o WattSplit aprendeu para este aparelho, para que o aprendizado não a altere mais."
+    },
+    "assign_candidate": {
+      "name": "Atribuir carga descoberta",
+      "description": "Diz a um aparelho em espera qual carga descoberta é a dele.",
+      "fields": {
+        "level_w": {
+          "name": "Potência",
+          "description": "Potência da carga descoberta, em watts."
+        }
+      }
+    }
+  }
+}
