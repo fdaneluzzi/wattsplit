@@ -28,6 +28,7 @@ def replay(
         (ts, 0, (dev, on)) for ts, dev, on in log.state_events(since)
     ]
     timeline += [(t.seen_ts, 1, t) for t in log.toggles(since)]
+    timeline += [(ts, 3, (dev, value)) for ts, dev, value in log.counters(since)]
     timeline += [(e.seen_ts or e.ts, 2, e) for e, _ in log.edges(since)]
     for ts, kind, payload in sorted(timeline, key=lambda x: (x[0], x[1])):
         if kind == 0:
@@ -35,6 +36,9 @@ def replay(
             diss.on_state(dev, on, ts)
         elif kind == 1:
             diss.apply_toggle(payload)
+        elif kind == 3:
+            dev, value = payload
+            diss.on_counter(dev, ts, value)
         else:
             channels = {c for c, _ in payload.parts}
             diss.on_edge(payload, discover=not (channels and channels <= restricted_channels))

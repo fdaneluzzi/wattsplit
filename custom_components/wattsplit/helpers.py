@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from homeassistant.config_entries import ConfigSubentry
-from homeassistant.const import STATE_OFF, STATE_ON, STATE_UNAVAILABLE, STATE_UNKNOWN
+from homeassistant.const import STATE_UNAVAILABLE, STATE_UNKNOWN
 from homeassistant.core import State
 
 from .const import (
@@ -21,10 +21,10 @@ from .const import (
     CONF_STATE_ENTITY,
 )
 from .engine import DeviceSpec, PowerMode, Sources
+from .engine.states import on_off
 
 _TO_WATTS = {"W": 1.0, "kW": 1000.0, "mW": 0.001, "MW": 1_000_000.0}
 _UNAVAILABLE = (STATE_UNAVAILABLE, STATE_UNKNOWN)
-_CLIMATE_ACTIVE = ("cooling", "heating", "drying", "fan")
 
 
 def power_w(state: State | None) -> float | None:
@@ -42,14 +42,27 @@ def power_w(state: State | None) -> float | None:
 
 def is_on(state: State | None) -> bool | None:
     """On/off of a state entity; None when it cannot be told."""
+    if state is None:
+        return None
+    # Not state.domain: the recorder returns LazyState objects without it.
+    domain = state.entity_id.split(".", 1)[0]
+    return on_off(domain, state.state, state.attributes)
+
+
+_TO_WH = {"Wh": 1.0, "kWh": 1000.0, "MWh": 1_000_000.0}
+
+
+def energy_wh(state: State | None) -> float | None:
+    """Read a cumulative energy sensor in Wh; None if unavailable or unknown unit."""
     if state is None or state.state in _UNAVAILABLE:
         return None
-    if state.domain == "climate":
-        action = state.attributes.get("hvac_action")
-        if action is not None:
-            return action in _CLIMATE_ACTIVE
-        return state.state != STATE_OFF
-    return state.state == STATE_ON
+    factor = _TO_WH.get(state.attributes.get("unit_of_measurement", "Wh"))
+    if factor is None:
+        return None
+    try:
+        return float(state.state) * factor
+    except ValueError:
+        return None
 
 
 def parse_levels(text: str) -> tuple[float, ...]:

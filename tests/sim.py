@@ -146,7 +146,11 @@ def busy_ac_house(seed: int, n_other: int = 25, ac_w: float = 340.0):
 
 
 def three_channel_house(
-    seed: int, ac_w: float = 340.0, n_other: int = 12, with_truth: bool = False
+    seed: int,
+    ac_w: float = 340.0,
+    n_other: int = 12,
+    with_truth: bool = False,
+    cycles: int = 5,
 ):
     """The same busy house measured on three channels (e.g. three phases).
 
@@ -155,7 +159,7 @@ def three_channel_house(
     ``(ts, {channel: watts})`` plus the A/C's state events.
     """
     rng = random.Random(seed)
-    ac_loads, events, t = _ac_loads(rng, ac_w, ramp=True)
+    ac_loads, events, t = _ac_loads(rng, ac_w, ramp=True, cycles=cycles)
     others = {"a": [], "c": []}
     for name in others:
         for _ in range(n_other):

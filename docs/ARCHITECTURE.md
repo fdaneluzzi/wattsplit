@@ -162,6 +162,80 @@ with per-appliance detail (estimate, truth, error, confidence, toggles, which
 channels). Only the channel-means evidence is scored; the shadow sees no step
 edges. The shadow restarts empty with the integration.
 
+### Energy counters and the Energy dashboard
+
+Home Assistant's Energy dashboard already knows what WattSplit needs: which
+sensor is the grid power, which is the solar power, and which appliances have an
+energy counter. WattSplit reads it (`energy_import.py`) instead of asking twice.
+
+**Counters as a starting point.** Many appliances (the author's LG air
+conditioners and washer) report cumulative energy but no instantaneous power.
+Measured on the author's house, a `*_energy_today` counter updates **every 60
+minutes** and a `*_energy_this_month` counter roughly **every 5 hours**: far too
+slow for real-time attribution, but a clean, interference-free measurement of
+how much energy the appliance used between two updates. With the on/off timeline
+this gives its power directly (`engine/counter.py`):
+
+`power while on = Σ energy between updates ÷ Σ time on in those intervals`
+
+Intervals with under 5 minutes on are ignored; a reading lower than the last one
+is a rollover (daily or monthly counter) and drops that interval; below 10 W the
+counter is not measuring a running device. Confidence grows with the number of
+usable intervals, the hours of on-time, and shrinks with the scatter between
+intervals. A conclusive counter estimate takes precedence over what the
+whole-house channels say, and the two are **cross-checked**: the `Accuracy check`
+sensor also reports how far each appliance's channel estimate is from its own
+counter. Source label: `learned_from_counter`.
+
+**No cold start.** When an appliance with a counter is first set up, the last 10
+days of the recorder's state changes and counter readings are copied into the
+edge log, so the first replay already has an estimate instead of "unknown".
+
+**Import.** In the options, "Import from the Energy dashboard" fills empty
+source lists (grid, solar, battery power sensors) and adds one appliance per
+individual device. For each, the on/off entity is guessed among the other entities
+of the same device (`engine/states.py`: climate, water heater, humidifier, fan,
+then a status sensor that knows running from idle, then a running/power binary
+sensor, then a plain power switch; lighting and eco switches are never chosen)
+and the finest counter of that device is used (a `*_energy_today` beats the
+dashboard's monthly one). Status sensors that report text (a washer's cycle:
+`running`, `rinsing`, `spinning`, ...) are read as on/off, and an unknown word is
+never read as off.
+
+**First real result (the author's house, 2026-10-30).** Importing the Energy
+dashboard created 7 appliances (six LG air conditioners and a washer); each
+arrived with 61 to 120 counter intervals copied from the recorder's last 10 days,
+and an estimate from the first moment instead of "unknown". Average power while
+on, and confidence:
+
+| Appliance | Power while on | Confidence | Usable intervals |
+|-----------|---------------:|-----------:|-----------------:|
+| Suite A/C | 732 W | 0.94 | 73 |
+| Varanda 2 A/C | 1253 W | 0.88 | 33 |
+| Felipe A/C | 51 W | 0.74 | 79 |
+| Washer | 213 W | 0.65 | 65 |
+| Varanda 1 A/C | 1874 W | 0.63 | 4 |
+| Living room A/C | 684 W | 0.60 | 34 |
+| Dining room A/C | 689 W | 0.48 | 19 |
+
+These are the *average draw while the entity reads "on"*, which is what energy
+accounting needs. They are not the compressor's power: a climate entity without
+`hvac_action` is "on" in any mode but off, so an A/C that mostly idles in cool
+mode (Felipe, 51 W) shows a low average. Varanda 1 rests on only 4 usable
+intervals and should be read with that in mind.
+
+Two defects found by this run, both fixed: the recorder returns `LazyState`
+objects that have no `.domain` (read it from `entity_id`), and the first
+confidence formula penalised the spread *between* intervals, which only reflects
+how differently the appliance was used, so appliances with dozens of intervals
+came out at 0. The confidence is now the standard error of the total ratio. A
+failure while reading history must never stop setup; it is now caught and logged.
+
+**Limits.** The counter is the appliance's own estimate, usually modelled rather
+than metered, so it is a good starting point and a cross-check, not exact truth.
+At one reading an hour, a washer cycle of an hour and a half is mixed with the
+hours around it; the ratio over many cycles is what is trusted.
+
 ## 4. Power modes — when the user tells us the power, and when not
 
 Per device, the user chooses (`DeviceSpec.power_mode`; derived automatically
@@ -422,7 +496,7 @@ Inferred entities expose `confidence`, `source` and `power_mode` attributes.
 |-----------|---------|--------|
 | **M0 — engine core** | composer, step detector, latent + state devices, power modes, discovery, SQLite edge log, replay, simulator, tests | **done (21 tests)** |
 | **M1 — HA shell** | config flow + options + appliance subentries, coordinator with timer sampling, entities (attached to the source device for state-only appliances), state-event capture, `pin` / `assign_candidate` actions, en + pt-BR. Learned state is rebuilt by replaying the SQLite log on startup, so no separate `Store` is needed. | **deployed on HA 2026.10.4; learning from real toggles not yet observed** |
-| **M2a — engine: channels & sessions** | (1) multiple input channels (per phase) with noise-adaptive thresholds; (2) difference-of-means estimator for state devices; (3) bad-reading rejection and per-input rates/lag; (4) variable-power model; (5) session ledger, labels and session-level scoring; recorder bootstrap. Order set by the first real-world tests (§13). Items (1)–(3) are built and tested (53 tests; 100/100 simulated three-channel houses, 96/100 single-channel, never confidently wrong); validated on real history at the real 15 s / 61 s rates; wired into the HA layer, **not yet verified live**. | **in progress** |
+| **M2a — engine: channels & sessions** | (1) multiple input channels (per phase) with noise-adaptive thresholds; (2) difference-of-means estimator for state devices; (3) bad-reading rejection and per-input rates/lag; (4) variable-power model; (5) session ledger, labels and session-level scoring; recorder bootstrap. Order set by the first real-world tests (§13). Items (1)–(3) are built and tested (71 tests; 100/100 simulated three-channel houses, 96/100 single-channel, never confidently wrong); validated on real history at the real 15 s / 61 s rates; wired into the HA layer, **not yet verified live**. | **in progress** |
 | **M2b — panel** | sidebar panel: timeline, sessions & corrections, discovery inbox, devices, tune & replay; websocket API; diagnostics / self-validation | |
 | **M3 — harder devices** | NNLS multi-level, combination matcher, per-phase aggregates, model snapshots, optional statistics import for corrected energy | |
 | **M4 — community** | device-profile library (JSON, like Powercalc's), docs, HACS default-repo submission, Silver quality scale | |

@@ -94,14 +94,20 @@ class Disaggregator:
         )
         self._last_event[device_id] = ts
 
-    def sync_state(self, device_id: str, is_on: bool) -> None:
+    def sync_state(
+        self, device_id: str, is_on: bool, ts: float | None = None
+    ) -> None:
         """Set a state device's on/off without treating it as a transition.
 
         For startup and reconnects, where the entity did not actually switch.
+        With ``ts`` it also becomes the baseline of the on/off timeline that
+        energy counters are measured against.
         """
         dev = self._state.get(device_id)
         if dev is not None:
             dev.is_on = is_on
+            if ts is not None:
+                dev.counter.add_state(ts, is_on)
 
     def _timing(self, channel: str) -> tuple[float, float, float, float]:
         return self._channel_timing.get(channel, self._default_timing)
@@ -167,6 +173,16 @@ class Disaggregator:
             self._default_timing = values
         else:
             self._channel_timing[channel] = values
+
+    def on_counter(self, device_id: str, ts: float, value_wh: float) -> None:
+        """A reading of an appliance's own cumulative energy counter, in Wh."""
+        dev = self._state.get(device_id)
+        if dev is not None:
+            dev.add_counter(ts, value_wh)
+
+    def cross_checks(self) -> dict[str, dict]:
+        """Per appliance, whole-house channels versus its own energy counter."""
+        return {k: c for k, v in self._state.items() if (c := v.cross_check())}
 
     def apply_toggle(self, toggle: Toggle) -> None:
         """Feed a previously recorded toggle (replay)."""
@@ -318,7 +334,7 @@ class Disaggregator:
                 dev.is_on,
                 dev.power_w,
                 dev.confidence,
-                "declared" if dev.frozen else "learned_from_state",
+                dev.source,
                 dev.channel_powers,
             )
         return out

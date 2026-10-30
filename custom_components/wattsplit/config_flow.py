@@ -18,10 +18,12 @@ from homeassistant.helpers import selector
 
 from .const import (
     CONF_BATTERY,
+    CONF_ENERGY_ENTITY,
     CONF_EVIDENCE,
     CONF_GENERATION,
     CONF_GRID,
     CONF_HOUSE,
+    CONF_IMPORT_ENERGY,
     CONF_INVERT_GRID,
     CONF_LOADS,
     CONF_MIN_STEP,
@@ -35,6 +37,7 @@ from .const import (
     DOMAIN,
     SUBENTRY_APPLIANCE,
 )
+from .energy_import import appliances_from_dashboard, async_read_energy_dashboard
 from .engine import PowerMode
 from .helpers import format_levels, parse_levels, sources_from_entry
 
@@ -84,10 +87,17 @@ class WattSplitConfigFlow(ConfigFlow, domain=DOMAIN):
                 return self.async_create_entry(title="WattSplit", data={}, options=sources)
             errors["base"] = "no_source"
 
+        suggested = user_input
+        if suggested is None and (imported := await async_read_energy_dashboard(self.hass)):
+            suggested = {
+                CONF_GRID: list(imported.grid),
+                CONF_GENERATION: list(imported.generation),
+                CONF_BATTERY: list(imported.battery),
+            }
         return self.async_show_form(
             step_id="user",
             data_schema=self.add_suggested_values_to_schema(
-                vol.Schema(_source_fields()), user_input
+                vol.Schema(_source_fields()), suggested
             ),
             errors=errors,
         )
@@ -112,9 +122,27 @@ class WattSplitOptionsFlow(OptionsFlow):
         errors: dict[str, str] = {}
         if user_input is not None:
             options = _clean_sources(user_input)
+            imported = None
+            if user_input.get(CONF_IMPORT_ENERGY):
+                imported = await async_read_energy_dashboard(self.hass)
+                for key, values in (
+                    (CONF_GRID, imported.grid if imported else ()),
+                    (CONF_GENERATION, imported.generation if imported else ()),
+                    (CONF_BATTERY, imported.battery if imported else ()),
+                ):
+                    if not options[key] and values:
+                        options[key] = list(values)
             if not _has_consumption_source(options):
                 errors["base"] = "no_source"
             else:
+                if imported:
+                    new, _skipped = appliances_from_dashboard(
+                        self.hass, self.config_entry, imported
+                    )
+                    for subentry in new:
+                        self.hass.config_entries.async_add_subentry(
+                            self.config_entry, subentry
+                        )
                 options[CONF_SAMPLE_INTERVAL] = user_input[CONF_SAMPLE_INTERVAL]
                 options[CONF_MIN_STEP] = user_input[CONF_MIN_STEP]
                 if user_input.get(CONF_EVIDENCE):  # empty = use the default
@@ -125,6 +153,7 @@ class WattSplitOptionsFlow(OptionsFlow):
             {
                 **_source_fields(),
                 vol.Optional(CONF_EVIDENCE): _POWER_SENSORS,
+                vol.Optional(CONF_IMPORT_ENERGY, default=False): bool,
                 vol.Required(
                     CONF_SAMPLE_INTERVAL, default=DEFAULT_SAMPLE_INTERVAL_S
                 ): selector.NumberSelector(
@@ -199,6 +228,9 @@ class ApplianceSubentryFlow(ConfigSubentryFlow):
                 vol.Required("name"): selector.TextSelector(),
                 vol.Optional(CONF_STATE_ENTITY): selector.EntitySelector(),
                 vol.Optional(CONF_POWER_ENTITY): _POWER_SENSOR,
+                vol.Optional(CONF_ENERGY_ENTITY): selector.EntitySelector(
+                    selector.EntitySelectorConfig(domain="sensor", device_class="energy")
+                ),
                 vol.Optional(CONF_POWER_MODE): selector.SelectSelector(
                     selector.SelectSelectorConfig(
                         options=[m.value for m in PowerMode],

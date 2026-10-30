@@ -44,13 +44,15 @@
             "state_entity": "Entidade liga/desliga",
             "power_entity": "Sensor de potência",
             "power_mode": "Modo de potência",
-            "power_levels": "Potência (W)"
+            "power_levels": "Potência (W)",
+            "energy_entity": "Contador de energia (opcional)"
           },
           "data_description": {
             "state_entity": "Opcional. Permite aprender a potência do aparelho a partir de quando ele liga e desliga.",
             "power_entity": "Opcional. Se o aparelho já tem sensor de potência, o WattSplit só o usa para descontar do sinal da casa.",
             "power_mode": "Conhecida: usa a potência abaixo. Dica: usa como ponto de partida e refina. Aprender: nada declarado. Fixada: um valor aprendido que você congelou.",
-            "power_levels": "Um valor, ou vários separados por vírgula (ex.: 3200, 5500 para um chuveiro de duas temperaturas)."
+            "power_levels": "Um valor, ou vários separados por vírgula (ex.: 3200, 5500 para um chuveiro de duas temperaturas).",
+            "energy_entity": "O sensor de energia acumulada do próprio aparelho (Wh ou kWh). É uma medição limpa que o WattSplit usa como ponto de partida e conferência: a energia entre as atualizações dividida pelo tempo em que o aparelho ficou ligado. Pode atualizar só uma vez por hora; basta."
           }
         },
         "reconfigure": {
@@ -60,7 +62,11 @@
             "state_entity": "Entidade liga/desliga",
             "power_entity": "Sensor de potência",
             "power_mode": "Modo de potência",
-            "power_levels": "Potência (W)"
+            "power_levels": "Potência (W)",
+            "energy_entity": "Contador de energia (opcional)"
+          },
+          "data_description": {
+            "energy_entity": "O sensor de energia acumulada do próprio aparelho (Wh ou kWh). É uma medição limpa que o WattSplit usa como ponto de partida e conferência: a energia entre as atualizações dividida pelo tempo em que o aparelho ficou ligado. Pode atualizar só uma vez por hora; basta."
           }
         }
       },
@@ -87,7 +93,8 @@
           "invert_grid": "Os medidores da rede informam exportação como positivo",
           "evidence": "Sensores de evidência (opcional)",
           "sample_interval": "Intervalo de amostragem",
-          "min_step_w": "Menor degrau a detectar"
+          "min_step_w": "Menor degrau a detectar",
+          "import_energy": "Importar do painel de Energia (uma vez)"
         },
         "data_description": {
           "house_entity": "Um sensor de consumo total já pronto. Se informado, é usado como o valor da casa inteira.",
@@ -97,7 +104,8 @@
           "battery_entity": "Positivo quando a bateria alimenta a casa, negativo ao carregar.",
           "evidence": "Sensores que podem carregar parte da potência de um aparelho, como um inversor solar ou uma bateria. Cada um é comparado com o liga/desliga de cada aparelho e só conta se o acompanhar com clareza; a parcela dele é então somada. Eles nunca são usados para procurar cargas, então uma nuvem passando não é confundida com uma. Deixe vazio para usar os sensores de geração e bateria acima quando a detecção usa o sinal da rede.",
           "sample_interval": "Com que frequência o motor olha as entradas. O tempo de média é ajustado automaticamente pela frequência com que cada sensor realmente reporta.",
-          "min_step_w": "Um piso. Cada canal o eleva sozinho para superar o próprio ruído."
+          "min_step_w": "Um piso. Cada canal o eleva sozinho para superar o próprio ruído.",
+          "import_energy": "Preenche as listas de fontes vazias com os sensores de potência de rede, solar e bateria do painel, e adiciona um aparelho para cada dispositivo individual dele (com a entidade liga/desliga e o contador de energia deduzidos do mesmo dispositivo). Dispositivos já adicionados são mantidos."
         }
       }
     },

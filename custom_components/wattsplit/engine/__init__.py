@@ -5,6 +5,7 @@ later published as its own package.
 """
 
 from .composer import house_power_w
+from .counter import CounterEstimator
 from .detector import GlitchFilter, MultiChannelDetector, StepDetector
 from .disaggregator import Disaggregator
 from .discovery import Candidate, Discoverer
@@ -17,6 +18,7 @@ from .validation import Validator
 
 __all__ = [
     "Candidate",
+    "CounterEstimator",
     "DeviceSpec",
     "Disaggregator",
     "Discoverer",

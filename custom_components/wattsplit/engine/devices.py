@@ -7,6 +7,7 @@ from collections import deque
 from dataclasses import dataclass, field, replace
 from statistics import median
 
+from .counter import CounterEstimator
 from .models import DeviceSpec, Edge, PowerMode, Toggle
 
 
@@ -103,6 +104,7 @@ class StateDevice:
         self._window = window_s
         self._events: deque[_Event] = deque(maxlen=self._EVENTS)
         self._toggles: deque[Toggle] = deque(maxlen=self._TOGGLES)
+        self.counter = CounterEstimator()
 
     @property
     def frozen(self) -> bool:
@@ -117,7 +119,12 @@ class StateDevice:
 
     def open_event(self, ts: float, is_on: bool) -> None:
         self.is_on = is_on
+        self.counter.add_state(ts, is_on)
         self._events.append(_Event(ts, is_on))
+
+    def add_counter(self, ts: float, value_wh: float) -> None:
+        """A reading of this device's own cumulative energy counter."""
+        self.counter.add_counter(ts, value_wh)
 
     def add_toggle(self, toggle: Toggle) -> None:
         if self.frozen:
@@ -313,13 +320,49 @@ class StateDevice:
 
     # -- what we believe --------------------------------------------------------------
 
+    _COUNTER_MIN_CONFIDENCE = 0.3
+
+    def _counter_estimate(self) -> tuple[float, float] | None:
+        est = self.counter.estimate()
+        return est if est and est[1] >= self._COUNTER_MIN_CONFIDENCE else None
+
     def _best(self) -> tuple[float, float] | None:
-        """The evidence to believe: channel means if clear, else step consensus."""
-        # Channel means win whenever a channel is statistically clear: they are
-        # gated by significance and cover every channel the device shows up on,
-        # while step consensus only sees the detection channels and so can
-        # report just a part of a device that is fed from several places.
-        return self._channel_estimate() or self._consensus_estimate()
+        """The evidence to believe.
+
+        The appliance's own energy counter if it is conclusive: it is clean and
+        immune to whatever else is switching in the house. Otherwise channel
+        means when a channel is statistically clear (they cover every channel the
+        device shows up on, which step consensus cannot), else step consensus.
+        """
+        return (
+            self._counter_estimate()
+            or self._channel_estimate()
+            or self._consensus_estimate()
+        )
+
+    @property
+    def source(self) -> str:
+        if self.frozen:
+            return "declared"
+        if self._counter_estimate():
+            return "learned_from_counter"
+        return "learned_from_state"
+
+    def cross_check(self) -> dict | None:
+        """Compare what the whole-house channels say with the energy counter.
+
+        Both are independent measurements of the same appliance; agreement is
+        evidence for each, divergence says one of them is wrong here.
+        """
+        counter = self.counter.estimate()
+        channels = self._channel_estimate()
+        if counter is None or channels is None:
+            return None
+        return {
+            "counter_w": round(counter[0], 1),
+            "channels_w": round(channels[0], 1),
+            "difference_pct": round(100.0 * (channels[0] - counter[0]) / counter[0], 1),
+        }
 
     def _reference(self) -> float | None:
         """The power used to decide whether an edge is ours."""
@@ -375,6 +418,7 @@ class StateDevice:
                  "involved": any(i[0] == c for i in self._involved())}
                 for c, m, se, sc, n, k in self._channel_stats()
             ],
+            "counter": self.counter.describe(),
             "step_consensus": None if cons is None else {
                 "power_w": round(cons[0], 1), "support": cons[1], "rival": cons[3]},
         }

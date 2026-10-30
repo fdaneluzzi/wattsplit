@@ -16,8 +16,10 @@ from homeassistant.helpers.event import (
     async_track_state_change_event,
 )
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
+from homeassistant.util import dt as dt_util
 
 from .const import (
+    CONF_ENERGY_ENTITY,
     CONF_EVIDENCE,
     CONF_MIN_STEP,
     CONF_POWER_ENTITY,
@@ -28,6 +30,7 @@ from .const import (
     DEFAULT_MIN_STEP_W,
     DEFAULT_SAMPLE_INTERVAL_S,
     DOMAIN,
+    HISTORY_DAYS,
     LOG_RETENTION_DAYS,
     MAX_ENERGY_STEP_S,
     NOISE_K,
@@ -53,6 +56,7 @@ from .engine import (
     timing_for,
 )
 from .helpers import (
+    energy_wh,
     format_levels,
     is_on,
     power_w,
@@ -76,6 +80,7 @@ class WattSplitData:
     candidates: list[Candidate] = field(default_factory=list)
     detection: dict[str, Any] = field(default_factory=dict)
     validation: dict[str, Any] = field(default_factory=dict)
+    cross_checks: dict[str, Any] = field(default_factory=dict)
 
 
 class WattSplitCoordinator(DataUpdateCoordinator[WattSplitData]):
@@ -123,6 +128,20 @@ class WattSplitCoordinator(DataUpdateCoordinator[WattSplitData]):
                     sub.subentry_id
                 )
 
+        # An appliance's own cumulative energy counter is a clean, interference-free
+        # measurement, so it is used as a starting point and a cross-check.
+        self._counter_entities: dict[str, list[str]] = {}
+        self._counter_of: dict[str, str] = {}
+        for sub in entry.subentries.values():
+            counter = sub.data.get(CONF_ENERGY_ENTITY)
+            if (
+                counter
+                and sub.data.get(CONF_STATE_ENTITY)
+                and not sub.data.get(CONF_POWER_ENTITY)
+            ):
+                self._counter_entities.setdefault(counter, []).append(sub.subentry_id)
+                self._counter_of[sub.subentry_id] = counter
+
         # How often each input really reports, measured from last_reported.
         self._rates: dict[str, RateTracker] = {}
         self._reported_at: dict[str, float] = {}
@@ -148,6 +167,10 @@ class WattSplitCoordinator(DataUpdateCoordinator[WattSplitData]):
         self.log = await self.hass.async_add_executor_job(EdgeLog, path)
         cutoff = time.time() - LOG_RETENTION_DAYS * 86400
         await self.hass.async_add_executor_job(self.log.prune, cutoff)
+        try:
+            await self._async_bootstrap_history()
+        except Exception:  # noqa: BLE001 - history is a bonus, it must never stop setup
+            _LOGGER.warning("Could not learn from the recorder history", exc_info=True)
         # Edges seen on generation / battery sensors never enter the discovery
         # inbox (a cloud steps an inverter like a load would).
         restricted = frozenset(
@@ -166,13 +189,16 @@ class WattSplitCoordinator(DataUpdateCoordinator[WattSplitData]):
             on = is_on(self.hass.states.get(entity_id))
             if on is not None:
                 for device_id in device_ids:
-                    self.diss.sync_state(device_id, on)
+                    self.diss.sync_state(device_id, on, time.time())
         for entity_id, device_ids in self._validator_entities.items():
             on = is_on(self.hass.states.get(entity_id))
             if on is not None:
                 for device_id in device_ids:
                     self._validators[device_id].sync_state(on)
-        watched = list({*self._state_entities, *self._validator_entities})
+        await self._async_baseline_counters()
+        watched = list(
+            {*self._state_entities, *self._validator_entities, *self._counter_entities}
+        )
         if watched:
             self._unsub_states = async_track_state_change_event(
                 self.hass, watched, self._async_on_state_event
@@ -306,6 +332,9 @@ class WattSplitCoordinator(DataUpdateCoordinator[WattSplitData]):
     @callback
     def _async_on_state_event(self, event: Event[EventStateChangedData]) -> None:
         entity_id = event.data["entity_id"]
+        if entity_id in self._counter_entities:
+            self._on_counter_event(entity_id, event)
+            return
         now_on = is_on(event.data["new_state"])
         was_on = is_on(event.data["old_state"])
         if now_on is None:
@@ -327,6 +356,105 @@ class WattSplitCoordinator(DataUpdateCoordinator[WattSplitData]):
                 self._validators[device_id].sync_state(now_on)
             else:
                 self._validators[device_id].on_state(now_on, ts)
+
+    def _on_counter_event(self, entity_id: str, event: Event[EventStateChangedData]) -> None:
+        wh = energy_wh(event.data["new_state"])
+        if wh is None:
+            return
+        ts = event.time_fired.timestamp()
+        for device_id in self._counter_entities[entity_id]:
+            self.diss.on_counter(device_id, ts, wh)
+            if self.log is not None:
+                self.config_entry.async_create_background_task(
+                    self.hass,
+                    self._async_log_counter(ts, device_id, wh),
+                    f"{DOMAIN}_log_counter",
+                )
+
+    async def _async_log_counter(self, ts: float, device_id: str, wh: float) -> None:
+        if self.log is not None:
+            await self.hass.async_add_executor_job(self.log.add_counter, ts, device_id, wh)
+
+    async def _async_bootstrap_history(self) -> None:
+        """Start from the recorder's history instead of from nothing.
+
+        For every appliance with an energy counter that the log has never seen,
+        copy the last ``HISTORY_DAYS`` of its state changes and counter readings
+        into the log, so the very first replay already has an estimate.
+        """
+        if self.log is None or not self._counter_of or "recorder" not in self.hass.config.components:
+            return
+        log = self.log
+        known = {device for _, device, _ in await self.hass.async_add_executor_job(log.counters)}
+        wanted = {
+            d: (self._state_entity_of(d), counter)
+            for d, counter in self._counter_of.items()
+            if d not in known
+        }
+        if not wanted:
+            return
+        from homeassistant.components.recorder import get_instance
+        from homeassistant.components.recorder.history import get_significant_states
+
+        end = dt_util.utcnow()
+        start = end - timedelta(days=HISTORY_DAYS)
+        entity_ids = sorted({e for pair in wanted.values() for e in pair if e})
+        try:
+            history = await get_instance(self.hass).async_add_executor_job(
+                get_significant_states, self.hass, start, end, entity_ids,
+                None, True, False, False, False,
+            )
+        except Exception:  # noqa: BLE001 - history is a bonus, never fatal
+            _LOGGER.debug("Could not read the recorder history", exc_info=True)
+            return
+
+        rows_state: list[tuple[float, str, bool]] = []
+        rows_counter: list[tuple[float, str, float]] = []
+        for device_id, (state_entity, counter_entity) in wanted.items():
+            previous = None
+            for state in history.get(state_entity, []):
+                on = is_on(state)
+                if on is None or on == previous:
+                    continue
+                previous = on
+                rows_state.append((state.last_updated.timestamp(), device_id, on))
+            for state in history.get(counter_entity, []):
+                wh = energy_wh(state)
+                if wh is not None:
+                    rows_counter.append((state.last_updated.timestamp(), device_id, wh))
+
+        def write() -> None:
+            for ts, device_id, on in sorted(rows_state):
+                log.add_state(ts, device_id, on)
+            for ts, device_id, wh in sorted(rows_counter):
+                log.add_counter(ts, device_id, wh)
+
+        await self.hass.async_add_executor_job(write)
+        _LOGGER.debug(
+            "Bootstrapped %d state changes and %d counter readings from history",
+            len(rows_state), len(rows_counter),
+        )
+
+    def _state_entity_of(self, device_id: str) -> str | None:
+        subentry = self.config_entry.subentries.get(device_id)
+        return subentry.data.get(CONF_STATE_ENTITY) if subentry else None
+
+    async def _async_baseline_counters(self) -> None:
+        """Put each counter's current reading on the timeline, once."""
+        for counter_entity, device_ids in self._counter_entities.items():
+            state = self.hass.states.get(counter_entity)
+            wh = energy_wh(state)
+            if wh is None:
+                continue
+            ts = state.last_updated.timestamp()
+            for device_id in device_ids:
+                self.diss.on_counter(device_id, ts, wh)  # ignored if already known
+                if self.log is not None:
+                    later = await self.hass.async_add_executor_job(self.log.counters, ts)
+                    if not any(d == device_id for _, d, _ in later):
+                        await self.hass.async_add_executor_job(
+                            self.log.add_counter, ts, device_id, wh
+                        )
 
     async def _async_log_state(self, ts: float, device_id: str, on: bool) -> None:
         if self.log is not None:
@@ -416,7 +544,17 @@ class WattSplitCoordinator(DataUpdateCoordinator[WattSplitData]):
             candidates=self._candidates,
             detection=self._describe_detection(plan),
             validation=self._validation_report(),
+            cross_checks=self._cross_checks(),
         )
+
+    def _cross_checks(self) -> dict[str, Any]:
+        """Whole-house channels versus the appliance's own energy counter."""
+        subentries = self.config_entry.subentries
+        return {
+            subentries[device_id].title: check
+            for device_id, check in self.diss.cross_checks().items()
+            if device_id in subentries
+        }
 
     def _validation_report(self) -> dict[str, Any]:
         """Per metered appliance: what the engine would have said without the sensor."""
@@ -520,4 +658,5 @@ class WattSplitCoordinator(DataUpdateCoordinator[WattSplitData]):
             },
             "engine": self.diss.describe(),
             "validation": self._validation_report(),
+            "cross_checks": self._cross_checks(),
         }

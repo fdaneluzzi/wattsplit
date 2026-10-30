@@ -168,9 +168,11 @@ class CandidatesSensor(GlobalEntity, SensorEntity):
 class AccuracyCheckSensor(GlobalEntity, SensorEntity):
     """How far the engine is from a real power sensor, on this house.
 
-    For every appliance that has both an on/off entity and a power sensor, the
-    engine is run on it a second time as if the sensor did not exist. The state
-    is the mean absolute error in percent; the attributes list each appliance.
+    Two kinds of ground truth, both reported as a percentage and averaged:
+    an appliance with a real power sensor is re-run as if the sensor did not
+    exist; an appliance with an energy counter has what the whole-house
+    channels say compared with what its own counter says. The state is the mean
+    absolute difference in percent; the attributes list each appliance.
     """
 
     _attr_native_unit_of_measurement = "%"
@@ -182,16 +184,18 @@ class AccuracyCheckSensor(GlobalEntity, SensorEntity):
 
     @property
     def native_value(self) -> float | None:
+        data = self.coordinator.data
         errors = [
             abs(r["error_pct"])
-            for r in self.coordinator.data.validation.values()
+            for r in data.validation.values()
             if r.get("error_pct") is not None
-        ]
+        ] + [abs(c["difference_pct"]) for c in data.cross_checks.values()]
         return round(sum(errors) / len(errors), 1) if errors else None
 
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
-        return {"appliances": self.coordinator.data.validation}
+        data = self.coordinator.data
+        return {"appliances": data.validation, "counter_vs_channels": data.cross_checks}
 
 
 # -- appliances ---------------------------------------------------------------

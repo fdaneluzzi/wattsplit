@@ -44,13 +44,15 @@
             "state_entity": "On/off entity",
             "power_entity": "Power sensor",
             "power_mode": "Power mode",
-            "power_levels": "Power (W)"
+            "power_levels": "Power (W)",
+            "energy_entity": "Energy counter (optional)"
           },
           "data_description": {
             "state_entity": "Optional. Lets WattSplit learn the appliance's power from when it switches.",
             "power_entity": "Optional. If the appliance already has a power sensor, WattSplit only uses it to subtract it from the house signal.",
             "power_mode": "Known: use the power below. Prior: use it as a hint and refine it. Learn: declare nothing. Pinned: a learned value you froze.",
-            "power_levels": "One value, or several separated by commas (for example 3200, 5500 for a two-stage shower)."
+            "power_levels": "One value, or several separated by commas (for example 3200, 5500 for a two-stage shower).",
+            "energy_entity": "The appliance's own cumulative energy sensor (Wh or kWh). A clean measurement that WattSplit uses as a starting point and a cross-check: energy between updates divided by the time the appliance was on. It may update only once an hour; that is enough."
           }
         },
         "reconfigure": {
@@ -60,7 +62,11 @@
             "state_entity": "On/off entity",
             "power_entity": "Power sensor",
             "power_mode": "Power mode",
-            "power_levels": "Power (W)"
+            "power_levels": "Power (W)",
+            "energy_entity": "Energy counter (optional)"
+          },
+          "data_description": {
+            "energy_entity": "The appliance's own cumulative energy sensor (Wh or kWh). A clean measurement that WattSplit uses as a starting point and a cross-check: energy between updates divided by the time the appliance was on. It may update only once an hour; that is enough."
           }
         }
       },
@@ -87,7 +93,8 @@
           "invert_grid": "Grid meters report export as positive",
           "evidence": "Evidence sensors (optional)",
           "sample_interval": "Sampling interval",
-          "min_step_w": "Smallest step to detect"
+          "min_step_w": "Smallest step to detect",
+          "import_energy": "Import from the Energy dashboard (once)"
         },
         "data_description": {
           "house_entity": "A ready-made total consumption sensor. If set, it is used as the whole-house value.",
@@ -97,7 +104,8 @@
           "battery_entity": "Positive when the battery feeds the house, negative when charging.",
           "evidence": "Sensors that may carry part of an appliance's power, such as a solar inverter or a battery. Each one is checked against each appliance's on/off changes and counts only if it clearly follows them; its share is then added. They are never searched for loads, so a passing cloud is not mistaken for one. Leave empty to use the generation and battery sensors above when detection runs on the grid signal.",
           "sample_interval": "How often the engine looks at its inputs. How long it averages is set automatically from how often each sensor actually reports.",
-          "min_step_w": "A floor. Each channel raises it automatically to clear its own noise."
+          "min_step_w": "A floor. Each channel raises it automatically to clear its own noise.",
+          "import_energy": "Fills empty source lists with the dashboard's grid, solar and battery power sensors, and adds an appliance for each of its individual devices (with its on/off entity and energy counter guessed from the same device). Devices already added are left alone."
         }
       }
     },

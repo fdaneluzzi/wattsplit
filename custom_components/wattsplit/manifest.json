@@ -1,6 +1,10 @@
 {
   "domain": "wattsplit",
   "name": "WattSplit",
+  "after_dependencies": [
+    "recorder",
+    "energy"
+  ],
   "codeowners": [],
   "config_flow": true,
   "documentation": "https://github.com/OWNER/wattsplit",
@@ -9,5 +13,5 @@
   "issue_tracker": "https://github.com/OWNER/wattsplit/issues",
   "requirements": [],
   "single_config_entry": true,
-  "version": "0.2.0"
+  "version": "0.3.0"
 }

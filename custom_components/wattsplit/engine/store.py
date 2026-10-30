@@ -40,6 +40,12 @@ CREATE TABLE IF NOT EXISTS toggles (
     after TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS toggles_seen ON toggles (seen_ts);
+CREATE TABLE IF NOT EXISTS counter_samples (
+    ts REAL NOT NULL,
+    device_id TEXT NOT NULL,
+    value_wh REAL NOT NULL
+);
+CREATE INDEX IF NOT EXISTS counter_ts ON counter_samples (ts);
 """
 
 
@@ -85,6 +91,21 @@ class EdgeLog:
                     json.dumps(toggle.after),
                 ),
             )
+
+    def add_counter(self, ts: float, device_id: str, value_wh: float) -> None:
+        with self._lock, self._db:
+            self._db.execute(
+                "INSERT INTO counter_samples VALUES (?, ?, ?)",
+                (ts, device_id, value_wh),
+            )
+
+    def counters(self, since: float = 0.0) -> list[tuple[float, str, float]]:
+        with self._lock:
+            return self._db.execute(
+                "SELECT ts, device_id, value_wh FROM counter_samples "
+                "WHERE ts >= ? ORDER BY ts",
+                (since,),
+            ).fetchall()
 
     def edges(
         self, since: float = 0.0, unexplained_only: bool = False
@@ -144,6 +165,9 @@ class EdgeLog:
             ).rowcount
             n += self._db.execute(
                 "DELETE FROM toggles WHERE seen_ts < ?", (before_ts,)
+            ).rowcount
+            n += self._db.execute(
+                "DELETE FROM counter_samples WHERE ts < ?", (before_ts,)
             ).rowcount
         return n
 
