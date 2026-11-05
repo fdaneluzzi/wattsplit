@@ -1,4 +1,4 @@
-"""Build the whole-house consumption signal from the user's meters."""
+"""Build the whole-home consumption signal from the user's meters."""
 
 from __future__ import annotations
 

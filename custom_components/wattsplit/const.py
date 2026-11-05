@@ -10,9 +10,9 @@ SUBENTRY_APPLIANCE = "appliance"
 CONF_GRID = "grid_entity"
 CONF_SOLAR = "solar_entity"
 CONF_BATTERY = "battery_entity"
-CONF_HOUSE = "house_entity"  # a ready-made whole-house consumption sensor
+CONF_HOUSE = "house_entity"  # a ready-made whole-home consumption sensor
 CONF_INVERT_GRID = "invert_grid"
-CONF_LOADS = "load_entities"  # per-phase / per-circuit / whole-house load sensors
+CONF_LOADS = "load_entities"  # per-phase / per-circuit / whole-home load sensors
 CONF_GENERATION = "generation_entities"  # solar inverters, generators
 
 # Main entry options.

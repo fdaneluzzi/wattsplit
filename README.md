@@ -13,9 +13,9 @@
 
 [![Open your Home Assistant instance and open this repository in HACS.](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=fdaneluzzi&repository=wattsplit&category=integration)
 
-**Split your house meter into per-appliance power and energy sensors in Home Assistant, for appliances that have no power sensor, and even for those that have no entity at all.**
+**Per-appliance power and energy sensors in Home Assistant, estimated from your whole-home power signal, for appliances that have no power sensor, and even for those that have no entity at all.**
 
-WattSplit watches the whole-house power signal (grid meter, per-phase sensors, solar inverters, battery) and infers *when* each appliance runs and *how much* it draws:
+WattSplit watches the whole-home power signal (grid meter, per-phase sensors, solar inverters, battery) and infers *when* each appliance runs and *how much* it draws:
 
 - **An appliance with an on/off entity but no power sensor** (a typical air conditioner, a washer): WattSplit learns its power from how the house signal changes when it switches, and uses the appliance's own energy counter, if it has one, as a starting point.
 - **An appliance with no entity at all** (an electric shower, a water pressure pump, a pool pump): WattSplit sees the recurring steps in the house signal, asks you "what is this?" once, and from then on estimates its on/off state, power and energy.
@@ -42,7 +42,7 @@ There is no dashboard to build and no sidebar panel. Everything lives in places 
 ## Requirements
 
 - Home Assistant **2026.10** or newer.
-- At least one sensor that shows whole-house consumption or grid power. Several are better: per-phase sensors, several meters and several inverters all work.
+- At least one sensor that shows whole-home consumption or grid power. Several are better: per-phase sensors, several meters and several inverters all work.
 - Sensors that update often help (every 10 to 15 s is great), but a sensor that reports once a minute, such as many solar inverters, is handled: WattSplit measures each sensor's real update rate and adapts.
 
 ## Install
@@ -76,7 +76,7 @@ Then let it run. The first estimates appear within hours (immediately for applia
 
 ## How it works
 
-Every appliance leaves a fingerprint in the house meter: a 5500 W shower is a clean +5500 W step when it starts and -5500 W when it stops. WattSplit:
+Every appliance leaves a fingerprint in the whole-home power signal: a 5500 W shower is a clean +5500 W step when it starts and -5500 W when it stops. WattSplit:
 
 1. Detects steps on each measured channel, with a threshold that adapts to that channel's own noise and a window set by how often the sensor really reports.
 2. Merges steps seen on several channels at once (an appliance on one phase, or fed partly by the inverter and partly by the grid).

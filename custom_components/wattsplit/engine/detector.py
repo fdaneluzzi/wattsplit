@@ -95,7 +95,7 @@ class StepDetector:
 
 
 class MultiChannelDetector:
-    """One :class:`StepDetector` per channel, merged into whole-house edges.
+    """One :class:`StepDetector` per channel, merged into whole-home edges.
 
     A load that spans several channels (a 220 V shower across two phases)
     steps each of them within a few seconds. Significant per-channel steps

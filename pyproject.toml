@@ -1,7 +1,7 @@
 [project]
 name = "wattsplit"
 version = "0.5.0"
-description = "Estimate per-appliance power and on/off state in Home Assistant from a single whole-house power signal"
+description = "Estimate per-appliance power and on/off state in Home Assistant from a single whole-home power signal"
 requires-python = ">=3.13"
 
 [tool.pytest.ini_options]

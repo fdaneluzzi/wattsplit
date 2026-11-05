@@ -20,7 +20,7 @@ are read and used:
     Positive when discharging into the house, negative when charging.
     Evidence only.
 
-``house`` is an optional ready-made whole-house consumption sensor.
+``house`` is an optional ready-made whole-home consumption sensor.
 
 Everything here is plain Python so it is tested without Home Assistant.
 """

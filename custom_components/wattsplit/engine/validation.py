@@ -2,7 +2,7 @@
 
 An appliance with both an on/off entity and a power sensor is ground truth. The
 engine is run on it a second time *as if the power sensor did not exist*: a
-shadow device learns its power from the whole-house channels around its state
+shadow device learns its power from the whole-home channels around its state
 changes, exactly like an unmetered appliance would, while a second shadow
 measures the same thing from the real sensor. Comparing the two gives an
 accuracy figure that comes from the user's own house, not from a benchmark.

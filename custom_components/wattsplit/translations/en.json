@@ -13,7 +13,7 @@
           "invert_grid": "Grid meters report export as positive"
         },
         "data_description": {
-          "house_entity": "A ready-made total consumption sensor. If set, it is used as the whole-house value.",
+          "house_entity": "A ready-made total consumption sensor. If set, it is used as the whole-home value.",
           "grid_entity": "Net power at the connection to the utility: positive when importing, negative when exporting.",
           "load_entities": "Power consumed on a phase, a circuit or the whole house, whatever supplies it. Each one is watched separately, so a quiet circuit shows small appliances.",
           "generation_entities": "Anything that produces power for the house. Used as evidence of where an appliance gets its power, never searched for loads.",
@@ -98,7 +98,7 @@
           "export_energy": "Add estimates to the Energy dashboard (once)"
         },
         "data_description": {
-          "house_entity": "A ready-made total consumption sensor. If set, it is used as the whole-house value.",
+          "house_entity": "A ready-made total consumption sensor. If set, it is used as the whole-home value.",
           "grid_entity": "Net power at the connection to the utility: positive when importing, negative when exporting.",
           "load_entities": "Power consumed on a phase, a circuit or the whole house, whatever supplies it. Each one is watched separately, so a quiet circuit shows small appliances.",
           "generation_entities": "Anything that produces power for the house. Used as evidence of where an appliance gets its power, never searched for loads.",

@@ -191,7 +191,7 @@ class AccuracyCheckSensor(GlobalEntity, SensorEntity):
 
     Two kinds of ground truth, both reported as a percentage and averaged:
     an appliance with a real power sensor is re-run as if the sensor did not
-    exist; an appliance with an energy counter has what the whole-house
+    exist; an appliance with an energy counter has what the whole-home
     channels say compared with what its own counter says. The state is the mean
     absolute difference in percent; the attributes list each appliance.
     """

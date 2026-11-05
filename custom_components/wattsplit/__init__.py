@@ -1,4 +1,4 @@
-"""WattSplit: per-appliance power inferred from whole-house consumption."""
+"""WattSplit: per-appliance power inferred from whole-home consumption."""
 
 from __future__ import annotations
 

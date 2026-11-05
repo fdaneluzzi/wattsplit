@@ -61,7 +61,7 @@ def main() -> None:
     def py(w: float) -> float:
         return y1 - (y1 - y0) * w / top_w
 
-    d.text((LEFT * SS, 34 * SS), "One house meter, split per appliance", font=font(34, True), fill=INK)
+    d.text((LEFT * SS, 34 * SS), "One whole-home signal, split per appliance", font=font(34, True), fill=INK)
     d.text(
         (LEFT * SS, 82 * SS),
         "Synthetic example. The shower and the pump have no sensor or switch in Home Assistant.",

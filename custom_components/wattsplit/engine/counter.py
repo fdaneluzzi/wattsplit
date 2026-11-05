@@ -11,7 +11,7 @@ updates. Combined with how long it was on in that time, it gives its power:
 Summed over many intervals this is a ratio estimator that does not care about
 the rest of the house. It is the appliance's own figure, so it is only as good as
 the appliance's own metering, and it is used as a starting point and a
-cross-check for what the whole-house channels say.
+cross-check for what the whole-home channels say.
 """
 
 from __future__ import annotations

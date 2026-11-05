@@ -360,7 +360,7 @@ class StateDevice:
         return "learned_from_state"
 
     def cross_check(self) -> dict | None:
-        """Compare what the whole-house channels say with the energy counter.
+        """Compare what the whole-home channels say with the energy counter.
 
         Both are independent measurements of the same appliance; agreement is
         evidence for each, divergence says one of them is wrong here. When no

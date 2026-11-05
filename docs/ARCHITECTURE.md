@@ -2,7 +2,7 @@
 
 WattSplit estimates **how much power individual appliances draw, and when they
 switch on and off**, using the one signal almost every Home Assistant energy
-setup already has: whole-house consumption. It splits the house meter into
+setup already has: whole-home consumption. It splits the whole-home signal into
 per-appliance virtual sub-meters.
 
 ## 1. Problem and scope
@@ -96,7 +96,7 @@ decides how its readings are read and used (`engine/plan.py`, pure Python):
 
 | Role | Meaning | Used for |
 |------|---------|----------|
-| `house` | a ready-made whole-house consumption sensor | the whole-house value; one detection channel |
+| `house` | a ready-made whole-home consumption sensor | the whole-home value; one detection channel |
 | `grid` | net power at the utility connection (import +, export −) | detection; part of rebuilt consumption |
 | `load` | power consumed on a phase, a circuit or the whole house | detection, each one its own channel |
 | `generation` | solar inverters, generators (positive when producing) | rebuilt consumption; **evidence only** |
@@ -111,7 +111,7 @@ otherwise they stay evidence. Several of any role are fine.
 
 | Your setup | Configure | What happens |
 |------------|-----------|--------------|
-| One whole-house sensor | `house` | one channel: step consensus; channel means only if the signal is quiet; otherwise an honest "don't know yet" |
+| One whole-home sensor | `house` | one channel: step consensus; channel means only if the signal is quiet; otherwise an honest "don't know yet" |
 | Utility meter + one or more inverters (+ battery) | `grid` + `generation` (+ `battery`) | steps on the grid meter; every inverter and the battery are judged per appliance and their shares added |
 | Per-phase / per-circuit load sensors | `load` | every sensor its own channel; a quiet one isolates small appliances |
 | Two utility meters, a sub-board | several `grid` | each its own channel |
@@ -155,7 +155,7 @@ actually tested on.
 Accuracy is not asserted, it is measured on the user's own house. Any appliance
 that has **both an on/off entity and a power sensor** is ground truth. The
 engine is run on it a second time as if the sensor did not exist (a shadow
-`StateDevice` learns from the whole-house channels around its state changes,
+`StateDevice` learns from the whole-home channels around its state changes,
 another measures the same thing from the real sensor, with identical windows)
 and the `Accuracy check` sensor reports the mean absolute error in percent,
 with per-appliance detail (estimate, truth, error, confidence, toggles, which
@@ -183,7 +183,7 @@ is a rollover (daily or monthly counter) and drops that interval; below 10 W the
 counter is not measuring a running device. Confidence grows with the number of
 usable intervals, the hours of on-time, and shrinks with the scatter between
 intervals. A conclusive counter estimate takes precedence over what the
-whole-house channels say, and the two are **cross-checked**: the `Accuracy check`
+whole-home channels say, and the two are **cross-checked**: the `Accuracy check`
 sensor also reports how far each appliance's channel estimate is from its own
 counter. Source label: `learned_from_counter`.
 

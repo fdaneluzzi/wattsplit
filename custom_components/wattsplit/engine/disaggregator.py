@@ -198,7 +198,7 @@ class Disaggregator:
             dev.add_counter(ts, value_wh)
 
     def cross_checks(self) -> dict[str, dict]:
-        """Per appliance, whole-house channels versus its own energy counter."""
+        """Per appliance, whole-home channels versus its own energy counter."""
         return {k: c for k, v in self._state.items() if (c := v.cross_check())}
 
     def apply_toggle(self, toggle: Toggle) -> None:
