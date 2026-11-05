@@ -4,6 +4,15 @@
 
 # WattSplit
 
+[![HACS Custom](https://img.shields.io/badge/HACS-Custom-orange.svg)](https://github.com/hacs/integration)
+[![Release](https://img.shields.io/github/v/release/fdaneluzzi/wattsplit?include_prereleases)](https://github.com/fdaneluzzi/wattsplit/releases)
+[![Tests](https://img.shields.io/github/actions/workflow/status/fdaneluzzi/wattsplit/tests.yml?branch=main&label=tests)](https://github.com/fdaneluzzi/wattsplit/actions/workflows/tests.yml)
+[![Validate](https://img.shields.io/github/actions/workflow/status/fdaneluzzi/wattsplit/validate.yml?branch=main&label=hassfest%20%26%20HACS)](https://github.com/fdaneluzzi/wattsplit/actions/workflows/validate.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![Buy Me a Coffee](https://img.shields.io/badge/Buy%20Me%20a%20Coffee-fdaneluzzi-FFDD00?logo=buymeacoffee&logoColor=black)](https://buymeacoffee.com/fdaneluzzi)
+
+[![Open your Home Assistant instance and open this repository in HACS.](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=fdaneluzzi&repository=wattsplit&category=integration)
+
 **Split your house meter into per-appliance power and energy sensors in Home Assistant, for appliances that have no power sensor, and even for those that have no entity at all.**
 
 WattSplit watches the whole-house power signal (grid meter, per-phase sensors, solar inverters, battery) and infers *when* each appliance runs and *how much* it draws:
