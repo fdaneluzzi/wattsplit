@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+from bisect import bisect_right
 from collections import deque
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from statistics import fmean
 
+from .clock import hour_of_day
 from .devices import LatentDevice, StateDevice
 from .discovery import Candidate, Discoverer
 from .models import DeviceSpec, Edge, Estimate, Toggle
@@ -76,6 +78,11 @@ class Disaggregator:
         self._samples: dict[str, deque[tuple[float, float]]] = {}
         self._pending: list[_PendingToggle] = []
         self._last_event: dict[str, float] = {}
+        # When each state device was on, to tell which one a recurring load belongs to.
+        self._on_since: dict[str, float] = {}
+        self._on_intervals: dict[str, list[tuple[float, float]]] = {d: [] for d in self._state}
+        self._t_first: float | None = None
+        self._t_last = 0.0
 
     # -- state changes and samples --------------------------------------------
 
@@ -84,6 +91,7 @@ class Disaggregator:
         if dev is None:
             return
         dev.open_event(ts, is_on)
+        self._track_on(device_id, is_on, ts)
         if not self._track:
             return
         for pending in self._pending:
@@ -93,6 +101,14 @@ class Disaggregator:
             _PendingToggle(device_id, ts, is_on, self._last_event.get(device_id))
         )
         self._last_event[device_id] = ts
+
+    def _track_on(self, device_id: str, is_on: bool, ts: float) -> None:
+        self._t_first = ts if self._t_first is None else min(self._t_first, ts)
+        self._t_last = max(self._t_last, ts)
+        if is_on:
+            self._on_since.setdefault(device_id, ts)
+        elif device_id in self._on_since:
+            self._on_intervals[device_id].append((self._on_since.pop(device_id), ts))
 
     def sync_state(
         self, device_id: str, is_on: bool, ts: float | None = None
@@ -108,6 +124,7 @@ class Disaggregator:
             dev.is_on = is_on
             if ts is not None:
                 dev.counter.add_state(ts, is_on)
+                self._track_on(device_id, is_on, ts)
 
     def _timing(self, channel: str) -> tuple[float, float, float, float]:
         return self._channel_timing.get(channel, self._default_timing)
@@ -226,6 +243,8 @@ class Disaggregator:
         and nobody explains it, the result is ``None`` even though part of the
         edge was claimed, so the log keeps showing it as unexplained.
         """
+        self._t_first = edge.ts if self._t_first is None else min(self._t_first, edge.ts)
+        self._t_last = max(self._t_last, edge.ts)
         claimant: str | None = None
         if len(edge.parts) > 1:
             for dev in self._state.values():
@@ -270,8 +289,102 @@ class Disaggregator:
 
     # -- discovery, specs, estimates -----------------------------------------------
 
+    # Acting without asking hides a load from the inbox for good, so only overwhelming
+    # evidence qualifies; everything weaker is offered to the user as a suggestion.
+    _ADOPT_MIN_COUNT = 20
+    _ADOPT_MIN_LIFT = 6.0
+    _ADOPT_MIN_SHARE = 0.7
+    _SUGGEST_MIN_LIFT = 2.5
+    _MAX_OWN_LEVEL_RATIO = 3.0
+
     def candidates(self, min_count: int = 2) -> list[Candidate]:
-        return self.discovery.candidates(min_count)
+        """Recurring unexplained loads, each with the state device it most likely
+        belongs to (if one is on far more often than chance when it appears).
+
+        A load that clearly belongs to a running device (its compressor cycling,
+        its heater) is handed to that device and leaves the list, so the inbox
+        only holds things that are really new.
+        """
+        table = self._slot_table()
+        found = [self._with_association(c, table) for c in self.discovery.candidates(min_count)]
+        adopted = [
+            c
+            for c in found
+            if c.likely_device
+            and c.count >= self._ADOPT_MIN_COUNT
+            and c.lift >= self._ADOPT_MIN_LIFT
+            and c.share_on >= self._ADOPT_MIN_SHARE
+        ]
+        if not adopted:
+            return found
+        for c in adopted:
+            self.add_cycle_level(c.likely_device, c.level_w)
+        return [self._with_association(c, table) for c in self.discovery.candidates(min_count)]
+
+    def add_cycle_level(self, device_id: str, level_w: float) -> None:
+        """The steps of this size are the device's own cycling while it is on."""
+        self._state[device_id].cycle_levels.add(level_w)
+        self.discovery.consume(level_w)
+
+    def _slot_table(self):
+        """For every state device, how long it was on in each hour of the span.
+
+        Built in one pass per device so that judging each candidate costs only
+        a walk over the hour slots, not over every on/off interval.
+        """
+        if self._t_first is None:
+            return None
+        first = self._t_first - (self._t_first % 3600)
+        n = int((self._t_last - first) // 3600) + 1
+        hours = [hour_of_day(first + i * 3600 + 1800) for i in range(n)]
+        table = {}
+        for device_id in self._state:
+            intervals = list(self._on_intervals[device_id])
+            if device_id in self._on_since:
+                intervals.append((self._on_since[device_id], self._t_last))
+            if not intervals:
+                continue
+            on = [0.0] * n
+            for a, b in intervals:
+                for i in range(max(0, int((a - first) // 3600)), min(n - 1, int((b - first) // 3600)) + 1):
+                    slot = first + i * 3600
+                    on[i] += max(0.0, min(b, slot + 3600) - max(a, slot))
+            table[device_id] = (on, [a for a, _ in intervals], [b for _, b in intervals])
+        return hours, table
+
+    def _with_association(self, candidate: Candidate, table) -> Candidate:
+        if table is None or not candidate.starts or candidate.count < 5:
+            return candidate
+        slot_hours, per_device = table
+        wanted = {hour_of_day(t) for t in candidate.starts}
+        slots = [i for i, h in enumerate(slot_hours) if h in wanted]
+        if not slots:
+            return candidate
+        best: tuple[str, float, float] | None = None
+        for device_id, (on, starts, ends) in per_device.items():
+            known = self._state[device_id].learned_w
+            if known and candidate.level_w > self._MAX_OWN_LEVEL_RATIO * known:
+                continue  # a 300 W appliance does not cycle a 1.3 kW load
+            # how often is it on at these hours of the day, over the whole span?
+            base = sum(on[i] for i in slots) / (3600.0 * len(slots))
+            if base < 0.02:
+                continue
+            hits = 0
+            for t in candidate.starts:
+                k = bisect_right(starts, t) - 1
+                hits += k >= 0 and ends[k] >= t
+            share = hits / len(candidate.starts)
+            lift = share / base
+            if best is None or lift > best[1]:
+                best = (device_id, lift, share)
+        if best and best[1] >= self._SUGGEST_MIN_LIFT and best[2] >= 0.3:
+            return replace(
+                candidate,
+                likely_device=best[0],
+                lift=round(best[1], 1),
+                share_on=round(best[2], 2),
+            )
+        return candidate
 
     def assign_candidate(self, device_id: str, level_w: float) -> None:
         """Give a waiting latent device the power level the user picked."""

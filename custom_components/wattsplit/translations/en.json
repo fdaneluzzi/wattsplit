@@ -94,7 +94,8 @@
           "evidence": "Evidence sensors (optional)",
           "sample_interval": "Sampling interval",
           "min_step_w": "Smallest step to detect",
-          "import_energy": "Import from the Energy dashboard (once)"
+          "import_energy": "Import from the Energy dashboard (once)",
+          "export_energy": "Add estimates to the Energy dashboard (once)"
         },
         "data_description": {
           "house_entity": "A ready-made total consumption sensor. If set, it is used as the whole-house value.",
@@ -105,7 +106,8 @@
           "evidence": "Sensors that may carry part of an appliance's power, such as a solar inverter or a battery. Each one is checked against each appliance's on/off changes and counts only if it clearly follows them; its share is then added. They are never searched for loads, so a passing cloud is not mistaken for one. Leave empty to use the generation and battery sensors above when detection runs on the grid signal.",
           "sample_interval": "How often the engine looks at its inputs. How long it averages is set automatically from how often each sensor actually reports.",
           "min_step_w": "A floor. Each channel raises it automatically to clear its own noise.",
-          "import_energy": "Fills empty source lists with the dashboard's grid, solar and battery power sensors, and adds an appliance for each of its individual devices (with its on/off entity and energy counter guessed from the same device). Devices already added are left alone."
+          "import_energy": "Fills empty source lists with the dashboard's grid, solar and battery power sensors, and adds an appliance for each of its individual devices (with its on/off entity and energy counter guessed from the same device). Devices already added are left alone.",
+          "export_energy": "Adds the estimated energy of appliances that have no energy counter of their own (a pool pump, a shower...) as individual devices of the Energy dashboard, so they stop being part of its 'untracked consumption'. Appliances that already have a counter are left alone and nothing is removed."
         }
       }
     },
@@ -120,6 +122,13 @@
         "prior": "Prior (hint, refined)",
         "learn": "Learn",
         "pinned": "Pinned"
+      }
+    },
+    "repair_action": {
+      "options": {
+        "part_of": "It is part of the appliance suggested above",
+        "assign": "It is one of my appliances (one without its own sensor)",
+        "new": "It is a new appliance"
       }
     }
   },
@@ -165,6 +174,136 @@
         "level_w": {
           "name": "Power",
           "description": "Power of the discovered load, in watts."
+        }
+      }
+    }
+  },
+  "issues": {
+    "discovered_load": {
+      "title": "A recurring load of about {level} W was found",
+      "fix_flow": {
+        "step": {
+          "init": {
+            "title": "Recurring load of about {level} W",
+            "description": "WattSplit saw a load of about {level} W switch on {count} times over {days} days, about {minutes} minutes each, around {hour}h, and none of your appliances explains it. What is it?",
+            "data": {
+              "action": "What is it?"
+            }
+          },
+          "assign": {
+            "title": "Which appliance?",
+            "description": "Pick the appliance, one that has no sensor of its own, that this load belongs to.",
+            "data": {
+              "appliance": "Appliance"
+            }
+          },
+          "new": {
+            "title": "New appliance",
+            "description": "Give it a name. WattSplit will follow when it is on and how much energy it uses.",
+            "data": {
+              "name": "Name"
+            }
+          }
+        },
+        "abort": {
+          "no_waiting_appliance": "You have no appliance without a sensor to assign it to. Choose \"It is a new appliance\" instead.",
+          "not_loaded": "WattSplit is not running right now. Try again in a moment."
+        }
+      }
+    },
+    "discovered_load_likely": {
+      "title": "A recurring load of about {level} W, probably part of {likely}",
+      "fix_flow": {
+        "step": {
+          "init": {
+            "title": "Recurring load of about {level} W",
+            "description": "WattSplit saw a load of about {level} W switch on {count} times over {days} days, about {minutes} minutes each, around {hour}h. {likely} was on in {share}% of those times, far more often than usual at that time of day. If it is part of {likely} (for example its compressor cycling), WattSplit will count it as its own while it runs. What is it?",
+            "data": {
+              "action": "What is it?"
+            }
+          },
+          "assign": {
+            "title": "Which appliance?",
+            "description": "Pick the appliance, one that has no sensor of its own, that this load belongs to.",
+            "data": {
+              "appliance": "Appliance"
+            }
+          },
+          "new": {
+            "title": "New appliance",
+            "description": "Give it a name. WattSplit will follow when it is on and how much energy it uses.",
+            "data": {
+              "name": "Name"
+            }
+          }
+        },
+        "abort": {
+          "no_waiting_appliance": "You have no appliance without a sensor to assign it to. Choose \"It is a new appliance\" instead.",
+          "not_loaded": "WattSplit is not running right now. Try again in a moment."
+        }
+      }
+    },
+    "discovered_load_spread": {
+      "title": "A recurring load of about {level} W was found",
+      "fix_flow": {
+        "step": {
+          "init": {
+            "title": "Recurring load of about {level} W",
+            "description": "WattSplit saw a load of about {level} W switch on {count} times over {days} days, about {minutes} minutes each, at {hours} different hours of the day, and none of your appliances explains it. What is it?",
+            "data": {
+              "action": "What is it?"
+            }
+          },
+          "assign": {
+            "title": "Which appliance?",
+            "description": "Pick the appliance, one that has no sensor of its own, that this load belongs to.",
+            "data": {
+              "appliance": "Appliance"
+            }
+          },
+          "new": {
+            "title": "New appliance",
+            "description": "Give it a name. WattSplit will follow when it is on and how much energy it uses.",
+            "data": {
+              "name": "Name"
+            }
+          }
+        },
+        "abort": {
+          "no_waiting_appliance": "You have no appliance without a sensor to assign it to. Choose \"It is a new appliance\" instead.",
+          "not_loaded": "WattSplit is not running right now. Try again in a moment."
+        }
+      }
+    },
+    "discovered_load_spread_likely": {
+      "title": "A recurring load of about {level} W, probably part of {likely}",
+      "fix_flow": {
+        "step": {
+          "init": {
+            "title": "Recurring load of about {level} W",
+            "description": "WattSplit saw a load of about {level} W switch on {count} times over {days} days, about {minutes} minutes each, at {hours} different hours of the day. {likely} was on in {share}% of those times, far more often than usual at that time of day. If it is part of {likely} (for example its compressor cycling), WattSplit will count it as its own while it runs. What is it?",
+            "data": {
+              "action": "What is it?"
+            }
+          },
+          "assign": {
+            "title": "Which appliance?",
+            "description": "Pick the appliance, one that has no sensor of its own, that this load belongs to.",
+            "data": {
+              "appliance": "Appliance"
+            }
+          },
+          "new": {
+            "title": "New appliance",
+            "description": "Give it a name. WattSplit will follow when it is on and how much energy it uses.",
+            "data": {
+              "name": "Name"
+            }
+          }
+        },
+        "abort": {
+          "no_waiting_appliance": "You have no appliance without a sensor to assign it to. Choose \"It is a new appliance\" instead.",
+          "not_loaded": "WattSplit is not running right now. Try again in a moment."
         }
       }
     }

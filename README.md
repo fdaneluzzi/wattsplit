@@ -21,6 +21,13 @@ draws, and for devices that already have an on/off entity it learns the missing
 power from the steps that line up with their state changes. Everything is
 local, explainable, and reports a confidence.
 
+## What you see
+
+No dashboard to build. Appliances show up as estimated power and energy sensors
+(on the appliance's own device when it has one), the Energy dashboard can show the
+unmetered ones next to the rest, and recurring loads WattSplit cannot explain
+arrive in Settings > Repairs as a short question: what is it?
+
 ## Supported setups
 
 List every sensor that measures energy in your home and give it a role (house

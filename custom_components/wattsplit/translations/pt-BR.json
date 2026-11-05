@@ -94,7 +94,8 @@
           "evidence": "Sensores de evidência (opcional)",
           "sample_interval": "Intervalo de amostragem",
           "min_step_w": "Menor degrau a detectar",
-          "import_energy": "Importar do painel de Energia (uma vez)"
+          "import_energy": "Importar do painel de Energia (uma vez)",
+          "export_energy": "Adicionar as estimativas ao painel de Energia (uma vez)"
         },
         "data_description": {
           "house_entity": "Um sensor de consumo total já pronto. Se informado, é usado como o valor da casa inteira.",
@@ -105,7 +106,8 @@
           "evidence": "Sensores que podem carregar parte da potência de um aparelho, como um inversor solar ou uma bateria. Cada um é comparado com o liga/desliga de cada aparelho e só conta se o acompanhar com clareza; a parcela dele é então somada. Eles nunca são usados para procurar cargas, então uma nuvem passando não é confundida com uma. Deixe vazio para usar os sensores de geração e bateria acima quando a detecção usa o sinal da rede.",
           "sample_interval": "Com que frequência o motor olha as entradas. O tempo de média é ajustado automaticamente pela frequência com que cada sensor realmente reporta.",
           "min_step_w": "Um piso. Cada canal o eleva sozinho para superar o próprio ruído.",
-          "import_energy": "Preenche as listas de fontes vazias com os sensores de potência de rede, solar e bateria do painel, e adiciona um aparelho para cada dispositivo individual dele (com a entidade liga/desliga e o contador de energia deduzidos do mesmo dispositivo). Dispositivos já adicionados são mantidos."
+          "import_energy": "Preenche as listas de fontes vazias com os sensores de potência de rede, solar e bateria do painel, e adiciona um aparelho para cada dispositivo individual dele (com a entidade liga/desliga e o contador de energia deduzidos do mesmo dispositivo). Dispositivos já adicionados são mantidos.",
+          "export_energy": "Adiciona a energia estimada dos aparelhos que não têm contador de energia próprio (uma bomba de piscina, um chuveiro...) como dispositivos individuais do painel de Energia, para deixarem de fazer parte do 'consumo não rastreado' dele. Aparelhos que já têm contador são mantidos como estão e nada é removido."
         }
       }
     },
@@ -120,6 +122,13 @@
         "prior": "Dica (refinada)",
         "learn": "Aprender",
         "pinned": "Fixada"
+      }
+    },
+    "repair_action": {
+      "options": {
+        "part_of": "É parte do aparelho sugerido acima",
+        "assign": "É um dos meus aparelhos (um sem sensor próprio)",
+        "new": "É um aparelho novo"
       }
     }
   },
@@ -165,6 +174,136 @@
         "level_w": {
           "name": "Potência",
           "description": "Potência da carga descoberta, em watts."
+        }
+      }
+    }
+  },
+  "issues": {
+    "discovered_load": {
+      "title": "Foi encontrada uma carga recorrente de cerca de {level} W",
+      "fix_flow": {
+        "step": {
+          "init": {
+            "title": "Carga recorrente de cerca de {level} W",
+            "description": "O WattSplit viu uma carga de cerca de {level} W ligar {count} vezes em {days} dias, cerca de {minutes} minutos cada, por volta das {hour}h, e nenhum dos seus aparelhos a explica. O que é?",
+            "data": {
+              "action": "O que é?"
+            }
+          },
+          "assign": {
+            "title": "Qual aparelho?",
+            "description": "Escolha o aparelho, um que não tem sensor próprio, ao qual esta carga pertence.",
+            "data": {
+              "appliance": "Aparelho"
+            }
+          },
+          "new": {
+            "title": "Novo aparelho",
+            "description": "Dê um nome. O WattSplit vai acompanhar quando ele liga e quanta energia usa.",
+            "data": {
+              "name": "Nome"
+            }
+          }
+        },
+        "abort": {
+          "no_waiting_appliance": "Você não tem nenhum aparelho sem sensor para atribuir. Escolha \"É um aparelho novo\".",
+          "not_loaded": "O WattSplit não está rodando agora. Tente de novo em instantes."
+        }
+      }
+    },
+    "discovered_load_likely": {
+      "title": "Uma carga recorrente de cerca de {level} W, provavelmente parte de {likely}",
+      "fix_flow": {
+        "step": {
+          "init": {
+            "title": "Carga recorrente de cerca de {level} W",
+            "description": "O WattSplit viu uma carga de cerca de {level} W ligar {count} vezes em {days} dias, cerca de {minutes} minutos cada, por volta das {hour}h. {likely} estava ligado em {share}% dessas vezes, bem mais do que o normal nessa hora do dia. Se ela for parte de {likely} (por exemplo o compressor ciclando), o WattSplit passa a contá-la como dele enquanto estiver ligado. O que é?",
+            "data": {
+              "action": "O que é?"
+            }
+          },
+          "assign": {
+            "title": "Qual aparelho?",
+            "description": "Escolha o aparelho, um que não tem sensor próprio, ao qual esta carga pertence.",
+            "data": {
+              "appliance": "Aparelho"
+            }
+          },
+          "new": {
+            "title": "Novo aparelho",
+            "description": "Dê um nome. O WattSplit vai acompanhar quando ele liga e quanta energia usa.",
+            "data": {
+              "name": "Nome"
+            }
+          }
+        },
+        "abort": {
+          "no_waiting_appliance": "Você não tem nenhum aparelho sem sensor para atribuir. Escolha \"É um aparelho novo\".",
+          "not_loaded": "O WattSplit não está rodando agora. Tente de novo em instantes."
+        }
+      }
+    },
+    "discovered_load_spread": {
+      "title": "Foi encontrada uma carga recorrente de cerca de {level} W",
+      "fix_flow": {
+        "step": {
+          "init": {
+            "title": "Carga recorrente de cerca de {level} W",
+            "description": "O WattSplit viu uma carga de cerca de {level} W ligar {count} vezes em {days} dias, cerca de {minutes} minutos cada, em {hours} horas diferentes do dia, e nenhum dos seus aparelhos a explica. O que é?",
+            "data": {
+              "action": "O que é?"
+            }
+          },
+          "assign": {
+            "title": "Qual aparelho?",
+            "description": "Escolha o aparelho, um que não tem sensor próprio, ao qual esta carga pertence.",
+            "data": {
+              "appliance": "Aparelho"
+            }
+          },
+          "new": {
+            "title": "Novo aparelho",
+            "description": "Dê um nome. O WattSplit vai acompanhar quando ele liga e quanta energia usa.",
+            "data": {
+              "name": "Nome"
+            }
+          }
+        },
+        "abort": {
+          "no_waiting_appliance": "Você não tem nenhum aparelho sem sensor para atribuir. Escolha \"É um aparelho novo\".",
+          "not_loaded": "O WattSplit não está rodando agora. Tente de novo em instantes."
+        }
+      }
+    },
+    "discovered_load_spread_likely": {
+      "title": "Uma carga recorrente de cerca de {level} W, provavelmente parte de {likely}",
+      "fix_flow": {
+        "step": {
+          "init": {
+            "title": "Carga recorrente de cerca de {level} W",
+            "description": "O WattSplit viu uma carga de cerca de {level} W ligar {count} vezes em {days} dias, cerca de {minutes} minutos cada, em {hours} horas diferentes do dia. {likely} estava ligado em {share}% dessas vezes, bem mais do que o normal nessa hora do dia. Se ela for parte de {likely} (por exemplo o compressor ciclando), o WattSplit passa a contá-la como dele enquanto estiver ligado. O que é?",
+            "data": {
+              "action": "O que é?"
+            }
+          },
+          "assign": {
+            "title": "Qual aparelho?",
+            "description": "Escolha o aparelho, um que não tem sensor próprio, ao qual esta carga pertence.",
+            "data": {
+              "appliance": "Aparelho"
+            }
+          },
+          "new": {
+            "title": "Novo aparelho",
+            "description": "Dê um nome. O WattSplit vai acompanhar quando ele liga e quanta energia usa.",
+            "data": {
+              "name": "Nome"
+            }
+          }
+        },
+        "abort": {
+          "no_waiting_appliance": "Você não tem nenhum aparelho sem sensor para atribuir. Escolha \"É um aparelho novo\".",
+          "not_loaded": "O WattSplit não está rodando agora. Tente de novo em instantes."
         }
       }
     }

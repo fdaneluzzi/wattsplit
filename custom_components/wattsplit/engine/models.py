@@ -76,6 +76,9 @@ class DeviceSpec:
     has_state: bool = False
     has_power: bool = False
     power_mode: PowerMode | None = None
+    # Power levels at which this device's compressor/heater cycles while it is on,
+    # confirmed by the user. Steps of this size are its own while it runs.
+    cycle_levels_w: tuple[float, ...] = ()
 
     @property
     def is_latent(self) -> bool:

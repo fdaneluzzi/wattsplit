@@ -6,6 +6,7 @@ later published as its own package.
 
 from .composer import house_power_w
 from .counter import CounterEstimator
+from .debounce import StateDebouncer
 from .detector import GlitchFilter, MultiChannelDetector, StepDetector
 from .disaggregator import Disaggregator
 from .discovery import Candidate, Discoverer
@@ -31,6 +32,7 @@ __all__ = [
     "PowerMode",
     "RateTracker",
     "Sources",
+    "StateDebouncer",
     "StepDetector",
     "Timing",
     "Toggle",

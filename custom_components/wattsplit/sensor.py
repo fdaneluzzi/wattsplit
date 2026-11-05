@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import time
 from collections.abc import Callable
 from typing import Any
 
@@ -12,11 +13,12 @@ from homeassistant.components.sensor import (
     SensorEntity,
     SensorStateClass,
 )
-from homeassistant.const import UnitOfEnergy, UnitOfPower
+from homeassistant.const import EntityCategory, UnitOfEnergy, UnitOfPower
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import entity_platform
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 
+from .const import ENERGY_PUBLISH_S
 from .coordinator import WattSplitConfigEntry, WattSplitCoordinator, WattSplitData
 from .entity import ApplianceEntity, GlobalEntity
 
@@ -68,6 +70,9 @@ class _EnergyMixin(RestoreSensor):
     _attr_suggested_display_precision = 3
 
     _kwh = 0.0
+    _last_publish = 0.0
+    _last_available: bool | None = None
+    _last_power: float | None = None
 
     def _power_w(self) -> float | None:  # pragma: no cover - overridden
         raise NotImplementedError
@@ -89,7 +94,15 @@ class _EnergyMixin(RestoreSensor):
         power = self._power_w()
         if data.available and power is not None:
             self._kwh += power * data.dt_s / 3_600_000
-        super()._handle_coordinator_update()  # type: ignore[misc]
+        # Integrate every tick, but write the state only now and then: a state per
+        # tick is ~43 000 rows a day per running appliance in the recorder.
+        now = time.monotonic()
+        available = self.available  # type: ignore[attr-defined]
+        stopped = (power or 0.0) == 0.0 and (self._last_power or 0.0) > 0.0
+        if available != self._last_available or stopped or now - self._last_publish >= ENERGY_PUBLISH_S:
+            self._last_publish, self._last_available = now, available
+            super()._handle_coordinator_update()  # type: ignore[misc]
+        self._last_power = power
 
 
 # -- whole house ------------------------------------------------------------
@@ -139,9 +152,10 @@ class UntrackedEnergySensor(_EnergyMixin, GlobalEntity):
 
 
 class CandidatesSensor(GlobalEntity, SensorEntity):
-    """The discovery inbox, until the panel exists."""
+    """Recurring loads nobody explains. They also arrive as items in Settings > Repairs."""
 
     _attr_state_class = SensorStateClass.MEASUREMENT
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
 
     def __init__(self, coordinator: WattSplitCoordinator) -> None:
         super().__init__(coordinator, "candidates")
@@ -157,8 +171,15 @@ class CandidatesSensor(GlobalEntity, SensorEntity):
                 {
                     "level_w": round(c.level_w),
                     "count": c.count,
+                    "days": c.days,
+                    "different_hours": len(c.hours),
                     "median_duration_min": round(c.median_duration_s / 60, 1),
+                    "duration_range_min": [
+                        round(c.duration_p10_s / 60, 1),
+                        round(c.duration_p90_s / 60, 1),
+                    ],
                     "typical_hour": c.typical_hour,
+                    "coherent": c.coherent,
                 }
                 for c in self.coordinator.data.candidates
             ]
@@ -176,6 +197,7 @@ class AccuracyCheckSensor(GlobalEntity, SensorEntity):
     """
 
     _attr_native_unit_of_measurement = "%"
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
     _attr_state_class = SensorStateClass.MEASUREMENT
     _attr_suggested_display_precision = 0
 
@@ -230,6 +252,14 @@ class AppliancePowerSensor(ApplianceEntity, SensorEntity):
         }
         if est.channels:
             attrs["channels_w"] = dict(est.channels)
+        device = self.coordinator.diss.state_device(self.device_id)
+        if device is not None:
+            info = device.describe()
+            attrs["evidence"] = {
+                "counter_intervals": info["counter"]["usable_intervals"],
+                "toggles": info["toggles"],
+                "own_cycle_levels_w": info["cycle_levels_w"],
+            }
         provisional = self.coordinator.diss.provisional_w(self.device_id)
         if provisional is not None and est.source == "learned_from_state":
             attrs["provisional_w"] = round(provisional)

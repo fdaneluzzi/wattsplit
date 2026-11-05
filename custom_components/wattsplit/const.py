@@ -38,3 +38,16 @@ HISTORY_DAYS = 10  # how far back to learn from the recorder when starting
 MAX_ENERGY_STEP_S = 60  # never integrate more than this per tick (clock jumps)
 STALE_AFTER_S = 900  # an input that has not reported for this long is unavailable
 RETIME_CHANGE = 0.3  # rebuild detectors when the measured timing moves this much
+
+# Confirm a state change only if it holds this long (entities that flap off-on-off).
+DEBOUNCE_S = 20.0
+# The energy sensors integrate every tick but publish at most this often, or the
+# recorder fills with ~43 000 states a day per running appliance.
+ENERGY_PUBLISH_S = 60.0
+# Discovered loads become Repairs items; show only the biggest few so it never spams.
+MAX_ISSUES = 3
+ISSUE_MIN_COUNT = 3
+ISSUE_MIN_LEVEL_W = 150.0
+CONF_CYCLE_LEVELS = "cycle_levels"  # power steps a device makes by itself while it runs
+CONF_EXPORT_ENERGY = "export_energy"  # one-shot: add estimates to the Energy dashboard
+CANDIDATES_EVERY_S = 60.0  # recompute the discovery inbox at most this often

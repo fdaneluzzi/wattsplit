@@ -19,6 +19,7 @@ from homeassistant.helpers import selector
 from .const import (
     CONF_BATTERY,
     CONF_ENERGY_ENTITY,
+    CONF_EXPORT_ENERGY,
     CONF_EVIDENCE,
     CONF_GENERATION,
     CONF_GRID,
@@ -37,7 +38,11 @@ from .const import (
     DOMAIN,
     SUBENTRY_APPLIANCE,
 )
-from .energy_import import appliances_from_dashboard, async_read_energy_dashboard
+from .energy_import import (
+    appliances_from_dashboard,
+    async_export_estimates_to_energy,
+    async_read_energy_dashboard,
+)
 from .engine import PowerMode
 from .helpers import format_levels, parse_levels, sources_from_entry
 
@@ -143,6 +148,8 @@ class WattSplitOptionsFlow(OptionsFlow):
                         self.hass.config_entries.async_add_subentry(
                             self.config_entry, subentry
                         )
+                if user_input.get(CONF_EXPORT_ENERGY):
+                    await async_export_estimates_to_energy(self.hass, self.config_entry)
                 options[CONF_SAMPLE_INTERVAL] = user_input[CONF_SAMPLE_INTERVAL]
                 options[CONF_MIN_STEP] = user_input[CONF_MIN_STEP]
                 if user_input.get(CONF_EVIDENCE):  # empty = use the default
@@ -154,6 +161,7 @@ class WattSplitOptionsFlow(OptionsFlow):
                 **_source_fields(),
                 vol.Optional(CONF_EVIDENCE): _POWER_SENSORS,
                 vol.Optional(CONF_IMPORT_ENERGY, default=False): bool,
+                vol.Optional(CONF_EXPORT_ENERGY, default=False): bool,
                 vol.Required(
                     CONF_SAMPLE_INTERVAL, default=DEFAULT_SAMPLE_INTERVAL_S
                 ): selector.NumberSelector(

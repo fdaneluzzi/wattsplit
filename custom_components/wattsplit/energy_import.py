@@ -16,7 +16,13 @@ from homeassistant.config_entries import ConfigEntry, ConfigSubentry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import entity_registry as er
 
-from .const import CONF_ENERGY_ENTITY, CONF_STATE_ENTITY, SUBENTRY_APPLIANCE
+from .const import (
+    CONF_ENERGY_ENTITY,
+    CONF_POWER_ENTITY,
+    CONF_STATE_ENTITY,
+    DOMAIN,
+    SUBENTRY_APPLIANCE,
+)
 from .engine.states import pick_counter, pick_state_entity
 
 _LOGGER = logging.getLogger(__name__)
@@ -125,3 +131,40 @@ def appliances_from_dashboard(
             )
         )
     return new, skipped
+
+
+async def async_export_estimates_to_energy(hass: HomeAssistant, entry: ConfigEntry) -> list[str]:
+    """Add the estimated energy of appliances to the Energy dashboard, once.
+
+    Only appliances that have no energy counter or power sensor of their own
+    qualify (a pool pump, a shower): the others are already in the dashboard
+    through their own counters, and adding the estimate too would count them
+    twice. Existing devices are kept and nothing is ever removed. Returns the
+    names added.
+    """
+    try:
+        from homeassistant.components.energy.data import async_get_manager
+
+        manager = await async_get_manager(hass)
+    except Exception:  # noqa: BLE001 - the dashboard is optional, never fatal
+        _LOGGER.debug("Energy dashboard preferences are not available", exc_info=True)
+        return []
+    if not manager.data:
+        return []
+
+    devices = list(manager.data.get("device_consumption", []))
+    present = {d["stat_consumption"] for d in devices}
+    registry = er.async_get(hass)
+    added: list[str] = []
+    for subentry in entry.subentries.values():
+        if subentry.data.get(CONF_ENERGY_ENTITY) or subentry.data.get(CONF_POWER_ENTITY):
+            continue
+        entity_id = registry.async_get_entity_id(
+            "sensor", DOMAIN, f"{subentry.subentry_id}_estimated_energy"
+        )
+        if entity_id and entity_id not in present:
+            devices.append({"stat_consumption": entity_id, "name": subentry.title})
+            added.append(subentry.title)
+    if added:
+        await manager.async_update({"device_consumption": devices})
+    return added

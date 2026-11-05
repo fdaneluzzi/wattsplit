@@ -82,8 +82,12 @@ class StateDevice:
     """
 
     _EVENTS = 20
-    _TOGGLES = 40
+    # One record per channel per state change, so this is channels x events. It
+    # was 40 (only 10 events per channel with four channels), which capped the
+    # evidence every channel could accumulate.
+    _TOGGLES = 600
     _ADMIT_BAND = 0.5  # with a prior, ignore evidence further than this from it
+    _CYCLE_BAND = 0.12  # a step this close to a cycling level is that cycle
     _CLAIM_BAND = 0.25  # an edge this close to the known power is ours
     _MATCH_TOL = 0.15  # steps this close to each other are "the same" power
     _MIN_N = 3  # toggles per channel before a channel can be trusted
@@ -105,6 +109,7 @@ class StateDevice:
         self._events: deque[_Event] = deque(maxlen=self._EVENTS)
         self._toggles: deque[Toggle] = deque(maxlen=self._TOGGLES)
         self.counter = CounterEstimator()
+        self.cycle_levels: set[float] = set(spec.cycle_levels_w)  # confirmed + learned
 
     @property
     def frozen(self) -> bool:
@@ -187,9 +192,15 @@ class StateDevice:
         """Consider an edge. Returns its relative error if this device *claims*
         it, else None. Plausible steps are remembered as consensus candidates
         either way."""
+        magnitude = abs(edge.delta_w)
+        if self.is_on and self.cycle_levels:
+            # While it runs, a compressor or heater cycling on and off is this
+            # device's own doing, at any moment, not only right after a state change.
+            near = min(self.cycle_levels, key=lambda level: abs(magnitude - level))
+            if abs(magnitude - near) <= self._CYCLE_BAND * near:
+                return abs(magnitude - near) / near
         if self.frozen and self.prior_w is None:
             return None
-        magnitude = abs(edge.delta_w)
         event = self._recent_event(edge.ts, edge.delta_w > 0)
         if event is None:
             return None
@@ -352,16 +363,25 @@ class StateDevice:
         """Compare what the whole-house channels say with the energy counter.
 
         Both are independent measurements of the same appliance; agreement is
-        evidence for each, divergence says one of them is wrong here.
+        evidence for each, divergence says one of them is wrong here. When no
+        channel is statistically clear yet, the looser provisional estimate is
+        compared instead and marked ``weak``.
         """
         counter = self.counter.estimate()
-        channels = self._channel_estimate()
-        if counter is None or channels is None:
+        if counter is None:
             return None
+        channels = self._channel_estimate()
+        strength = "strict"
+        if channels is None:
+            weak = self.provisional_w
+            if not weak:
+                return None
+            channels, strength = (weak, 0.0), "weak"
         return {
             "counter_w": round(counter[0], 1),
             "channels_w": round(channels[0], 1),
             "difference_pct": round(100.0 * (channels[0] - counter[0]) / counter[0], 1),
+            "strength": strength,
         }
 
     def _reference(self) -> float | None:
@@ -419,6 +439,7 @@ class StateDevice:
                 for c, m, se, sc, n, k in self._channel_stats()
             ],
             "counter": self.counter.describe(),
+            "cycle_levels_w": sorted(round(x) for x in self.cycle_levels),
             "step_consensus": None if cons is None else {
                 "power_w": round(cons[0], 1), "support": cons[1], "rival": cons[3]},
         }

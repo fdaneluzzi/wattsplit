@@ -9,6 +9,7 @@ from homeassistant.core import State
 from .const import (
     CONF_BATTERY,
     CONF_CHANNELS,
+    CONF_CYCLE_LEVELS,
     CONF_GENERATION,
     CONF_GRID,
     CONF_HOUSE,
@@ -88,6 +89,7 @@ def spec_from_subentry(subentry: ConfigSubentry) -> DeviceSpec:
         has_state=bool(data.get(CONF_STATE_ENTITY)),
         has_power=bool(data.get(CONF_POWER_ENTITY)),
         power_mode=PowerMode(mode) if mode else None,
+        cycle_levels_w=parse_levels(data[CONF_CYCLE_LEVELS]) if data.get(CONF_CYCLE_LEVELS) else (),
     )
 
 

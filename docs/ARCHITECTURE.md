@@ -236,6 +236,86 @@ than metered, so it is a good starting point and a cross-check, not exact truth.
 At one reading an hour, a washer cycle of an hour and a half is mixed with the
 hours around it; the ratio over many cycles is what is trusted.
 
+### What the user sees, without building a dashboard
+
+A community integration cannot depend on every user assembling their own
+dashboard, so everything the user needs ships inside the integration and uses what
+Home Assistant already provides. No sidebar panel is planned.
+
+- **Settings > Repairs.** Each of the biggest recurring unexplained loads (at most
+  3, at least 3 occurrences, at least 150 W, and only groups whose runs last about
+  the same) becomes a fixable item: "WattSplit saw a load of about 7932 W switch on
+  4 times over 3 days, about 15 minutes each, around 19h, and none of your
+  appliances explains it. What is it?" A load that happens at many hours of the day
+  says "at 11 different hours of the day" instead of inventing a time. The form offers: it is part of the appliance suggested
+  (when one is on far more often than usual at that hour of the day), it is one of
+  my appliances that has no sensor (assign its power), or it is a new appliance
+  (give it a name; WattSplit creates it and re-attributes the past). A dismissed
+  item stays dismissed; an assigned one leaves the inbox. (`repairs.py`)
+- **The Energy dashboard.** In the options, "Add estimates to the Energy
+  dashboard (once)" adds the estimated energy of appliances with no energy counter
+  of their own (a pool pump, a shower) as individual devices, so they stop being
+  part of "untracked consumption" there. Appliances that already have a counter
+  are skipped (they are already in the dashboard, and adding the estimate would
+  count them twice); nothing is ever removed. Opt-in, because it edits the user's
+  Energy configuration. (`energy_import.py`)
+- **Entities.** Internals (discovered loads, accuracy) are `diagnostic` entities,
+  every entity has an icon, and each appliance's power sensor exposes `evidence`
+  (usable counter intervals, toggles, the cycle levels it owns) so the user can see
+  how much the estimate rests on.
+
+### Loads that belong to a running appliance
+
+A compressor cycling on and off while an air conditioner runs produces steps no
+state change explains, and they used to fill the discovery inbox (on the author's
+house, 107 steps of 1342 W in 6 days). The engine now compares, for each recurring
+load, how often a state device was on when it appeared **against how often that
+device is on at those same hours of the day** (comparing with its overall on-time
+blamed the office A/C for everything that happens in the afternoon). When one is on
+far more often than usual:
+
+- it is **suggested** in the Repairs item (lift of at least 2.5 and on in at least
+  30% of the occurrences), and confirming it stores the level on the appliance
+  (`cycle_levels`), after which steps of that size are its own while it runs;
+- it is **adopted without asking** only with overwhelming evidence (20 or more
+  occurrences, lift of 6 or more, on in 70% or more of them). A first version
+  adopted at 10 occurrences and 50% and, on real data, silently hid a 692 W load
+  from the inbox as a 300 W air conditioner's cycle; acting without asking hides a
+  load for good, so the bar is high and the rest is a question.
+
+### What counts as "the same load" in the inbox
+
+Grouping by power alone is wrong: a pressure pump (1.34 kW, 6-minute cycles), a
+washer's heater and a compressor can all draw about the same, and a rise whose fall
+was lost gets paired with someone else's fall and becomes a "run" of hours. The first
+version of the Repairs text therefore said "107 times around 17h" for what was
+really several sources over 6 days. Now the pairs of a power cluster are split by run
+length: the group around the median length (from a quarter to four times it) is one
+candidate, shorter and longer runs are grouped separately. Each candidate reports
+its distinct days, the distinct hours of day, and the 10th/90th percentile of its run
+length, so the text states only what is true (`N times over D days`, `around Hh` only
+when it happens in 4 hours or fewer). A candidate whose runs are too spread to be
+one source is not offered as a question. A device can also not be suggested as owner
+of a load more than 3 times its own learned power (a 300 W appliance does not cycle
+1.3 kW).
+
+### Smaller fixes behind it
+
+- Toggle evidence per channel was capped at 10 events (the cap of 40 records was
+  set when one record held every channel); it is now 600 records.
+- The discovery inbox remembered 500 edges (about 2 days); it now keeps 5000.
+- State changes are confirmed only after holding 20 s (`StateDebouncer`): an entity
+  that reads off, on, off within seconds (the washer 17 times in 94 changes) no
+  longer pollutes the timeline. The confirmed change keeps its original timestamp.
+- The estimated-energy sensors integrate every 2 s but publish at most once a
+  minute (or when the appliance stops, or availability changes): a state per tick
+  was about 43 000 recorder rows a day per running appliance.
+- The accuracy sensor also reports a weak cross-check (channels below the strict
+  significance bar against the energy counter), marked `weak`, so it is not
+  `unknown` while the evidence builds up.
+- Recomputing the inbox at most once a minute and one pass per device for the
+  association took `candidates()` from 38 ms to 2.7 ms on 6 days of data.
+
 ## 4. Power modes — when the user tells us the power, and when not
 
 Per device, the user chooses (`DeviceSpec.power_mode`; derived automatically
@@ -496,7 +576,7 @@ Inferred entities expose `confidence`, `source` and `power_mode` attributes.
 |-----------|---------|--------|
 | **M0 — engine core** | composer, step detector, latent + state devices, power modes, discovery, SQLite edge log, replay, simulator, tests | **done (21 tests)** |
 | **M1 — HA shell** | config flow + options + appliance subentries, coordinator with timer sampling, entities (attached to the source device for state-only appliances), state-event capture, `pin` / `assign_candidate` actions, en + pt-BR. Learned state is rebuilt by replaying the SQLite log on startup, so no separate `Store` is needed. | **deployed on HA 2026.10.4; learning from real toggles not yet observed** |
-| **M2a — engine: channels & sessions** | (1) multiple input channels (per phase) with noise-adaptive thresholds; (2) difference-of-means estimator for state devices; (3) bad-reading rejection and per-input rates/lag; (4) variable-power model; (5) session ledger, labels and session-level scoring; recorder bootstrap. Order set by the first real-world tests (§13). Items (1)–(3) are built and tested (71 tests; 100/100 simulated three-channel houses, 96/100 single-channel, never confidently wrong); validated on real history at the real 15 s / 61 s rates; wired into the HA layer, **not yet verified live**. | **in progress** |
+| **M2a — engine: channels & sessions** | (1) multiple input channels (per phase) with noise-adaptive thresholds; (2) difference-of-means estimator for state devices; (3) bad-reading rejection and per-input rates/lag; (4) variable-power model; (5) session ledger, labels and session-level scoring; recorder bootstrap. Order set by the first real-world tests (§13). Items (1)–(3) are built and tested (83 tests; 100/100 simulated three-channel houses, 96/100 single-channel, never confidently wrong); validated on real history at the real 15 s / 61 s rates; wired into the HA layer, **not yet verified live**. | **in progress** |
 | **M2b — panel** | sidebar panel: timeline, sessions & corrections, discovery inbox, devices, tune & replay; websocket API; diagnostics / self-validation | |
 | **M3 — harder devices** | NNLS multi-level, combination matcher, per-phase aggregates, model snapshots, optional statistics import for corrected energy | |
 | **M4 — community** | device-profile library (JSON, like Powercalc's), docs, HACS default-repo submission, Silver quality scale | |

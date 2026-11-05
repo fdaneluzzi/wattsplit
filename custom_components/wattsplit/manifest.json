@@ -3,7 +3,8 @@
   "name": "WattSplit",
   "after_dependencies": [
     "recorder",
-    "energy"
+    "energy",
+    "repairs"
   ],
   "codeowners": [],
   "config_flow": true,
@@ -13,5 +14,5 @@
   "issue_tracker": "https://github.com/OWNER/wattsplit/issues",
   "requirements": [],
   "single_config_entry": true,
-  "version": "0.3.0"
+  "version": "0.4.0"
 }

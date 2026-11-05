@@ -3,22 +3,27 @@
 from __future__ import annotations
 
 import logging
+import math
 import time
 from dataclasses import dataclass, field
 from datetime import timedelta
 from typing import Any
 
-from homeassistant.config_entries import ConfigEntry
+from types import MappingProxyType
+
+from homeassistant.config_entries import ConfigEntry, ConfigSubentry
 from homeassistant.core import Event, HomeAssistant, callback
 from homeassistant.exceptions import ServiceValidationError
 from homeassistant.helpers.event import (
     EventStateChangedData,
     async_track_state_change_event,
 )
+from homeassistant.helpers import issue_registry as ir
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 from homeassistant.util import dt as dt_util
 
 from .const import (
+    CONF_CYCLE_LEVELS,
     CONF_ENERGY_ENTITY,
     CONF_EVIDENCE,
     CONF_MIN_STEP,
@@ -29,13 +34,19 @@ from .const import (
     CONF_STATE_ENTITY,
     DEFAULT_MIN_STEP_W,
     DEFAULT_SAMPLE_INTERVAL_S,
+    CANDIDATES_EVERY_S,
+    DEBOUNCE_S,
     DOMAIN,
     HISTORY_DAYS,
+    ISSUE_MIN_COUNT,
+    ISSUE_MIN_LEVEL_W,
     LOG_RETENTION_DAYS,
     MAX_ENERGY_STEP_S,
+    MAX_ISSUES,
     NOISE_K,
     RETIME_CHANGE,
     STALE_AFTER_S,
+    SUBENTRY_APPLIANCE,
 )
 from .engine import (
     Candidate,
@@ -47,6 +58,7 @@ from .engine import (
     Plan,
     PowerMode,
     RateTracker,
+    StateDebouncer,
     Timing,
     Validator,
     channel_values,
@@ -59,6 +71,7 @@ from .helpers import (
     energy_wh,
     format_levels,
     is_on,
+    parse_levels,
     power_w,
     sources_from_entry,
     spec_from_subentry,
@@ -157,7 +170,10 @@ class WattSplitCoordinator(DataUpdateCoordinator[WattSplitData]):
         self._last_ts: float | None = None
         self._candidates: list[Candidate] = []
         self._candidates_dirty = True
+        self._candidates_at = 0.0
         self._unsub_states: Any = None
+        self._debouncer = StateDebouncer(DEBOUNCE_S)
+        self._issue_ids: set[str] = set()
 
     async def async_setup(self) -> None:
         """Open the log and rebuild learned state by replaying it."""
@@ -190,11 +206,13 @@ class WattSplitCoordinator(DataUpdateCoordinator[WattSplitData]):
             if on is not None:
                 for device_id in device_ids:
                     self.diss.sync_state(device_id, on, time.time())
+                self._debouncer.sync(entity_id, on)
         for entity_id, device_ids in self._validator_entities.items():
             on = is_on(self.hass.states.get(entity_id))
             if on is not None:
                 for device_id in device_ids:
                     self._validators[device_id].sync_state(on)
+                self._debouncer.sync(entity_id, on)
         await self._async_baseline_counters()
         watched = list(
             {*self._state_entities, *self._validator_entities, *self._counter_entities}
@@ -206,6 +224,9 @@ class WattSplitCoordinator(DataUpdateCoordinator[WattSplitData]):
 
     async def async_shutdown(self) -> None:
         await super().async_shutdown()
+        for issue_id in self._issue_ids:
+            ir.async_delete_issue(self.hass, DOMAIN, issue_id)
+        self._issue_ids = set()
         if self._unsub_states:
             self._unsub_states()
             self._unsub_states = None
@@ -340,22 +361,32 @@ class WattSplitCoordinator(DataUpdateCoordinator[WattSplitData]):
         if now_on is None:
             return
         ts = event.time_fired.timestamp()
+        if was_on is None:  # first reading, or back from unavailable: not a switch
+            self._debouncer.sync(entity_id, now_on)
+            self._sync_devices(entity_id, now_on)
+        elif was_on != now_on:
+            # Believed only once it has held for DEBOUNCE_S (see StateDebouncer);
+            # polled from the tick. An attribute-only change needs nothing.
+            self._debouncer.submit(entity_id, ts, now_on)
+
+    def _sync_devices(self, entity_id: str, on: bool) -> None:
         for device_id in self._state_entities.get(entity_id, []):
-            if was_on is None or was_on == now_on:
-                self.diss.sync_state(device_id, now_on)
-                continue
-            self.diss.on_state(device_id, now_on, ts)
+            self.diss.sync_state(device_id, on)
+        for device_id in self._validator_entities.get(entity_id, []):
+            self._validators[device_id].sync_state(on)
+
+    def _apply_state(self, entity_id: str, ts: float, on: bool) -> None:
+        """A state change that held: tell the engine, the validators and the log."""
+        for device_id in self._state_entities.get(entity_id, []):
+            self.diss.on_state(device_id, on, ts)
             if self.log is not None:
                 self.config_entry.async_create_background_task(
                     self.hass,
-                    self._async_log_state(ts, device_id, now_on),
+                    self._async_log_state(ts, device_id, on),
                     f"{DOMAIN}_log_state",
                 )
         for device_id in self._validator_entities.get(entity_id, []):
-            if was_on is None or was_on == now_on:
-                self._validators[device_id].sync_state(now_on)
-            else:
-                self._validators[device_id].on_state(now_on, ts)
+            self._validators[device_id].on_state(on, ts)
 
     def _on_counter_event(self, entity_id: str, event: Event[EventStateChangedData]) -> None:
         wh = energy_wh(event.data["new_state"])
@@ -469,6 +500,8 @@ class WattSplitCoordinator(DataUpdateCoordinator[WattSplitData]):
         src = self.sources
 
         self._observe_rates()
+        for entity_id, ts, on in self._debouncer.poll(now):
+            self._apply_state(entity_id, ts, on)
         plan = choose_plan(src, self._period, self._evidence_option)
         self._retime(plan)
 
@@ -528,9 +561,12 @@ class WattSplitCoordinator(DataUpdateCoordinator[WattSplitData]):
                         self.log.add_edge, ev_edge, device_id
                     )
 
-        if self._candidates_dirty:
+        if self._candidates_dirty and now - self._candidates_at >= CANDIDATES_EVERY_S:
+            # Not on every unexplained step: the association behind it is not free.
             self._candidates = self.diss.candidates()
             self._candidates_dirty = False
+            self._candidates_at = now
+            self._sync_issues()
 
         estimates = self.diss.snapshot()
         tracked = measured + sum(e.power_w for e in estimates.values())
@@ -624,6 +660,102 @@ class WattSplitCoordinator(DataUpdateCoordinator[WattSplitData]):
         )
 
     # -- diagnostics ------------------------------------------------------------------------
+
+    # -- discovered loads: Repairs ---------------------------------------------------------
+
+    def _sync_issues(self) -> None:
+        """Ask the user about the biggest recurring unexplained loads.
+
+        Each becomes a fixable item in Settings > Repairs. A load the user dismisses
+        stays dismissed (the registry keeps that across re-creation); one that is
+        assigned leaves the engine's inbox and so disappears here.
+        """
+        titles = {sid: sub.title for sid, sub in self.config_entry.subentries.items()}
+        ranked = sorted(
+            (
+                c
+                for c in self._candidates
+                if c.coherent  # runs that last wildly different times are several sources
+                and c.count >= ISSUE_MIN_COUNT
+                and c.level_w >= ISSUE_MIN_LEVEL_W
+            ),
+            key=lambda c: -c.count * c.level_w * c.median_duration_s,
+        )[:MAX_ISSUES]
+        wanted = {}
+        for c in ranked:
+            # level and typical run length, so a pump's 6-minute cycles and a heater's
+            # 2-hour runs at the same power are different items
+            duration_bucket = int(math.log(max(c.median_duration_s / 60.0, 0.5) / 0.5, 4))
+            wanted[f"candidate_{int(round(c.level_w / 100.0)) * 100}_{duration_bucket}"] = c
+        for issue_id in self._issue_ids - set(wanted):
+            ir.async_delete_issue(self.hass, DOMAIN, issue_id)
+        for issue_id, c in wanted.items():
+            likely = titles.get(c.likely_device) if c.likely_device else None
+            key = "discovered_load" + ("" if c.concentrated else "_spread") + ("_likely" if likely else "")
+            ir.async_create_issue(
+                self.hass,
+                DOMAIN,
+                issue_id,
+                is_fixable=True,
+                severity=ir.IssueSeverity.WARNING,
+                translation_key=key,
+                translation_placeholders={
+                    "level": f"{c.level_w:.0f}",
+                    "count": str(c.count),
+                    "days": str(c.days),
+                    "hours": str(len(c.hours)),
+                    "minutes": f"{c.median_duration_s / 60:.0f}",
+                    "hour": f"{c.typical_hour:02d}",
+                    "likely": likely or "",
+                    "share": f"{c.share_on * 100:.0f}",
+                },
+                data={
+                    "level_w": round(c.level_w),
+                    "likely_device": c.likely_device or "",
+                    "count": c.count,
+                    "days": c.days,
+                    "hours": len(c.hours),
+                    "minutes": round(c.median_duration_s / 60),
+                    "hour": c.typical_hour,
+                    "likely": likely or "",
+                    "share": round(c.share_on * 100),
+                },
+            )
+        self._issue_ids = set(wanted)
+
+    def latent_options(self) -> list[dict[str, str]]:
+        """Appliances without an entity, as choices for a discovered load."""
+        return [
+            {"value": sid, "label": sub.title}
+            for sid, sub in self.config_entry.subentries.items()
+            if self.specs.get(sid) is not None and self.specs[sid].is_latent
+        ]
+
+    def confirm_cycle_level(self, device_id: str, level_w: float) -> None:
+        """The user says: steps of this size are this device's own, while it runs."""
+        if device_id not in self.specs or self.specs[device_id].is_latent:
+            raise ServiceValidationError("Only appliances with an on/off entity cycle")
+        self.diss.add_cycle_level(device_id, level_w)
+        subentry = self.config_entry.subentries[device_id]
+        known = parse_levels(subentry.data[CONF_CYCLE_LEVELS]) if subentry.data.get(CONF_CYCLE_LEVELS) else ()
+        merged = sorted({*known, round(level_w)})
+        self._persist(device_id, **{CONF_CYCLE_LEVELS: format_levels(tuple(merged))})
+
+    def create_appliance(self, title: str, level_w: float) -> None:
+        """The user says: this load is a new appliance, with this name."""
+        subentry = ConfigSubentry(
+            data=MappingProxyType(
+                {
+                    CONF_POWER_MODE: PowerMode.KNOWN.value,
+                    CONF_POWER_LEVELS: format_levels((level_w,)),
+                }
+            ),
+            subentry_type=SUBENTRY_APPLIANCE,
+            title=title,
+            unique_id=None,
+        )
+        self.diss.discovery.consume(level_w)
+        self.hass.config_entries.async_add_subentry(self.config_entry, subentry)
 
     def diagnostics(self) -> dict[str, Any]:
         """Everything needed to understand what the engine sees and believes."""

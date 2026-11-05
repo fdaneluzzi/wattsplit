@@ -9,9 +9,9 @@ from __future__ import annotations
 
 from collections import deque
 from dataclasses import dataclass
-from datetime import datetime
 from statistics import median
 
+from .clock import day_of, hour_of_day
 from .models import Edge
 
 
@@ -21,6 +21,24 @@ class Candidate:
     count: int
     median_duration_s: float
     typical_hour: int  # local hour, approximate (median; ignores midnight wrap)
+    days: int = 0  # on how many different days it happened
+    hours: tuple[int, ...] = ()  # the distinct local hours it happened in
+    duration_p10_s: float = 0.0
+    duration_p90_s: float = 0.0
+    starts: tuple[float, ...] = ()  # when each occurrence began
+    likely_device: str | None = None  # a state device that is on suspiciously often then
+    lift: float = 0.0  # how much more often than by chance
+    share_on: float = 0.0  # share of occurrences during which that device was on
+
+    @property
+    def concentrated(self) -> bool:
+        """Happens at a few hours of the day (a shower), not all day (a pump)."""
+        return len(self.hours) <= 4
+
+    @property
+    def coherent(self) -> bool:
+        """Its runs last about the same; a very wide spread means several sources."""
+        return self.duration_p90_s <= 25.0 * max(self.duration_p10_s, 30.0)
 
 
 @dataclass(frozen=True, slots=True)
@@ -39,7 +57,7 @@ class Discoverer:
         self,
         tolerance: float = 0.10,
         max_duration_s: float = 4 * 3600,
-        max_edges: int = 500,
+        max_edges: int = 5000,
     ) -> None:
         self._tol = tolerance
         self._max_duration_s = max_duration_s
@@ -86,19 +104,62 @@ class Discoverer:
             clusters.append([pair])
         return clusters
 
+    # Within a group, runs this many times shorter or longer than the typical one are
+    # different things (a 6-minute pump cycle is not a 3-hour heating program).
+    _DURATION_BAND = 4.0
+
+    def _split(self, pairs: list[_Pair], depth: int = 0) -> list[list[_Pair]]:
+        """The core of runs lasting about as long as the typical one, then the
+        shorter and longer rest, each split again in the same way."""
+        if len(pairs) < 2 or depth >= 3:
+            return [pairs]
+        typical = median(p.duration_s for p in pairs)
+        low, high = typical / self._DURATION_BAND, typical * self._DURATION_BAND
+        core = [p for p in pairs if low <= p.duration_s <= high]
+        shorter = [p for p in pairs if p.duration_s < low]
+        longer = [p for p in pairs if p.duration_s > high]
+        if not shorter and not longer:
+            return [core]
+        groups = [core] if core else []
+        for rest in (shorter, longer):
+            if rest:
+                groups.extend(self._split(rest, depth + 1))
+        return groups
+
+    def _groups(self) -> list[list[_Pair]]:
+        """Pairs of similar power, split further by how long they last.
+
+        Grouping by power alone merged everything that happens to draw about the
+        same (a pump, a washer's heater, a compressor), and a rise whose true fall
+        was lost got paired with someone else's fall, inventing runs of hours.
+        """
+        return [g for cluster in self._clusters() for g in self._split(cluster)]
+
+    @staticmethod
+    def _percentile(values: list[float], q: float) -> float:
+        ordered = sorted(values)
+        return ordered[min(len(ordered) - 1, int(q * len(ordered)))]
+
     def candidates(self, min_count: int = 2) -> list[Candidate]:
-        out = [
-            Candidate(
-                level_w=median(p.level_w for p in c),
-                count=len(c),
-                median_duration_s=median(p.duration_s for p in c),
-                typical_hour=int(
-                    median(datetime.fromtimestamp(p.start_ts).hour for p in c)
-                ),
+        out = []
+        for group in self._groups():
+            if len(group) < min_count:
+                continue
+            starts = sorted(p.start_ts for p in group)
+            durations = [p.duration_s for p in group]
+            out.append(
+                Candidate(
+                    level_w=median(p.level_w for p in group),
+                    count=len(group),
+                    median_duration_s=median(durations),
+                    typical_hour=int(median(hour_of_day(t) for t in starts)),
+                    days=len({day_of(t) for t in starts}),
+                    hours=tuple(sorted({hour_of_day(t) for t in starts})),
+                    duration_p10_s=self._percentile(durations, 0.1),
+                    duration_p90_s=self._percentile(durations, 0.9),
+                    starts=tuple(starts),
+                )
             )
-            for c in self._clusters()
-            if len(c) >= min_count
-        ]
         return sorted(out, key=lambda c: c.count, reverse=True)
 
     def consume(self, level_w: float) -> None:

@@ -1,0 +1,40 @@
+{
+  "entity": {
+    "sensor": {
+      "house_power": {
+        "default": "mdi:home-lightning-bolt"
+      },
+      "untracked_power": {
+        "default": "mdi:flash-alert-outline"
+      },
+      "untracked_energy": {
+        "default": "mdi:flash-alert-outline"
+      },
+      "candidates": {
+        "default": "mdi:magnify-scan"
+      },
+      "accuracy_check": {
+        "default": "mdi:target"
+      },
+      "estimated_power": {
+        "default": "mdi:flash"
+      },
+      "estimated_energy": {
+        "default": "mdi:counter"
+      }
+    },
+    "binary_sensor": {
+      "running": {
+        "default": "mdi:play-circle-outline"
+      }
+    }
+  },
+  "services": {
+    "pin": {
+      "service": "mdi:pin"
+    },
+    "assign_candidate": {
+      "service": "mdi:tag-plus"
+    }
+  }
+}
