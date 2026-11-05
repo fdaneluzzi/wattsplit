@@ -7,22 +7,22 @@ import math
 import time
 from dataclasses import dataclass, field
 from datetime import timedelta
-from typing import Any
-
 from types import MappingProxyType
+from typing import Any
 
 from homeassistant.config_entries import ConfigEntry, ConfigSubentry
 from homeassistant.core import Event, HomeAssistant, callback
 from homeassistant.exceptions import ServiceValidationError
+from homeassistant.helpers import issue_registry as ir
 from homeassistant.helpers.event import (
     EventStateChangedData,
     async_track_state_change_event,
 )
-from homeassistant.helpers import issue_registry as ir
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 from homeassistant.util import dt as dt_util
 
 from .const import (
+    CANDIDATES_EVERY_S,
     CONF_CYCLE_LEVELS,
     CONF_ENERGY_ENTITY,
     CONF_EVIDENCE,
@@ -32,10 +32,9 @@ from .const import (
     CONF_POWER_MODE,
     CONF_SAMPLE_INTERVAL,
     CONF_STATE_ENTITY,
+    DEBOUNCE_S,
     DEFAULT_MIN_STEP_W,
     DEFAULT_SAMPLE_INTERVAL_S,
-    CANDIDATES_EVERY_S,
-    DEBOUNCE_S,
     DOMAIN,
     HISTORY_DAYS,
     ISSUE_MIN_COUNT,

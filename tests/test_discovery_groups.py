@@ -1,8 +1,6 @@
 import pytest
-
-from sim import run_channels, three_channel_house
-
 from engine import DeviceSpec, Disaggregator, Discoverer, Edge
+from sim import run_channels, three_channel_house
 
 
 def _pairs(disc, level, starts, duration_s):

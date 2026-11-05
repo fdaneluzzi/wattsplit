@@ -1,12 +1,4 @@
 import pytest
-from sim import (
-    DT,
-    Load,
-    aggregate,
-    busy_ac_house,
-    run,
-)
-
 from engine import (
     DeviceSpec,
     Disaggregator,
@@ -15,6 +7,13 @@ from engine import (
     PowerMode,
     StepDetector,
     replay,
+)
+from sim import (
+    DT,
+    Load,
+    aggregate,
+    busy_ac_house,
+    run,
 )
 
 

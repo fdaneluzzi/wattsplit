@@ -1,6 +1,6 @@
 [project]
 name = "wattsplit"
-version = "0.1.0"
+version = "0.5.0"
 description = "Estimate per-appliance power and on/off state in Home Assistant from a single whole-house power signal"
 requires-python = ">=3.13"
 
@@ -14,3 +14,4 @@ target-version = "py313"
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B"]
+ignore = ["E501", "B905", "B007", "E741", "E731"]  # long lines in prose strings and tests; style choices

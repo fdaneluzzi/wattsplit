@@ -1,8 +1,6 @@
 import random
 
 import pytest
-from sim import DT, aggregate, run, run_channels, three_channel_house
-
 from engine import (
     DeviceSpec,
     Disaggregator,
@@ -10,6 +8,7 @@ from engine import (
     MultiChannelDetector,
     StepDetector,
 )
+from sim import DT, run, run_channels, three_channel_house
 
 
 def _feed(det, values):

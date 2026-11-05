@@ -6,13 +6,15 @@
     "energy",
     "repairs"
   ],
-  "codeowners": [],
+  "codeowners": [
+    "@fdaneluzzi"
+  ],
   "config_flow": true,
-  "documentation": "https://github.com/OWNER/wattsplit",
+  "documentation": "https://github.com/fdaneluzzi/wattsplit",
   "integration_type": "service",
   "iot_class": "calculated",
-  "issue_tracker": "https://github.com/OWNER/wattsplit/issues",
+  "issue_tracker": "https://github.com/fdaneluzzi/wattsplit/issues",
   "requirements": [],
   "single_config_entry": true,
-  "version": "0.4.0"
+  "version": "0.5.0"
 }

@@ -38,12 +38,12 @@ def test_every_lg_air_conditioner_of_the_real_house_picks_its_climate_entity():
         ("climate.ar_condicionado4", "cool", {}),
     ]
     assert pick_state_entity(device) == "climate.ar_condicionado4"
-    felipe = [
-        ("switch.ar_condicionado_felipe_economia_de_energia", "off", {}),
-        ("switch.ar_condicionado_felipe_power", "on", {}),
-        ("climate.ar_condicionado_felipe", "off", {}),
+    bedroom = [
+        ("switch.ar_condicionado_bedroom_economia_de_energia", "off", {}),
+        ("switch.ar_condicionado_bedroom_power", "on", {}),
+        ("climate.ar_condicionado_bedroom", "off", {}),
     ]
-    assert pick_state_entity(felipe) == "climate.ar_condicionado_felipe"
+    assert pick_state_entity(bedroom) == "climate.ar_condicionado_bedroom"
 
 
 def test_the_real_washer_picks_its_status_sensor_over_the_power_switch():
@@ -63,12 +63,12 @@ def test_a_device_with_only_a_bare_switch_falls_back_to_it_and_nothing_else_retu
 
 def test_the_finest_counter_wins_over_the_dashboards_monthly_one():
     siblings = [
-        "sensor.suite_ar_da_suite_energy_today",
+        "sensor.bedroom_ac_energy_today",
         "sensor.ar_condicionado4_energy_this_month",
         "sensor.ar_condicionado4_energy_yesterday",
     ]
     assert pick_counter(siblings, "sensor.ar_condicionado4_energy_this_month") == (
-        "sensor.suite_ar_da_suite_energy_today"
+        "sensor.bedroom_ac_energy_today"
     )
     assert pick_counter(["sensor.x_energy_this_month"], "sensor.x_energy_this_month") == (
         "sensor.x_energy_this_month"

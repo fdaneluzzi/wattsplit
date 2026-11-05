@@ -1,0 +1,25 @@
+name: Bug report
+description: An estimate is wrong, something fails, or the behaviour is surprising
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened, and what did you expect?
+    validations:
+      required: true
+  - type: input
+    id: versions
+    attributes:
+      label: Home Assistant and WattSplit versions
+    validations:
+      required: true
+  - type: textarea
+    id: setup
+    attributes:
+      label: Your setup
+      description: Measurement sources (how many, which role, how often each reports) and the appliance involved (on/off entity, power sensor, energy counter).
+  - type: textarea
+    id: diagnostics
+    attributes:
+      label: Diagnostics
+      description: Settings > Devices & services > WattSplit > Download diagnostics. Review it first, it lists your entity ids.

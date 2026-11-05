@@ -1,7 +1,6 @@
 import pytest
-from sim import DT, run_channels, three_channel_house
-
 from engine import CounterEstimator, DeviceSpec, Disaggregator, EdgeLog, replay
+from sim import DT, run_channels, three_channel_house
 
 
 def counter_series(windows, power_w, period_s, total_s, quant=1.0, reset_at=None):

@@ -1,5 +1,4 @@
 import pytest
-
 from engine import (
     Sources,
     channel_values,

@@ -19,8 +19,8 @@ from homeassistant.helpers import selector
 from .const import (
     CONF_BATTERY,
     CONF_ENERGY_ENTITY,
-    CONF_EXPORT_ENERGY,
     CONF_EVIDENCE,
+    CONF_EXPORT_ENERGY,
     CONF_GENERATION,
     CONF_GRID,
     CONF_HOUSE,

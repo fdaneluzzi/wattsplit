@@ -1,7 +1,6 @@
 import pytest
-from sim import DT, Load, aggregate, run
-
 from engine import DeviceSpec, Disaggregator, StepDetector, house_power_w
+from sim import DT, Load, aggregate, run
 
 
 def test_house_power_adds_generation():
@@ -30,7 +29,7 @@ def test_detector_reset_drops_the_buffer():
 def test_detector_ignores_steps_below_threshold():
     samples = aggregate(300, [Load(100, 200, 120)], noise_w=5)
     det = StepDetector(dt_s=DT, min_step_w=300)
-    assert not [e for ts, p in samples if det.update(ts, p)]
+    assert not [ts for ts, p in samples if det.update(ts, p)]
 
 
 def test_latent_shower_is_detected_without_any_entity():

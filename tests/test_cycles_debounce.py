@@ -1,14 +1,13 @@
 import pytest
-from sim import DT, run_channels, three_channel_house
-
 from engine import (
     DeviceSpec,
-    Discoverer,
     Disaggregator,
+    Discoverer,
     Edge,
     StateDebouncer,
     Toggle,
 )
+from sim import run_channels, three_channel_house
 
 
 def test_evidence_per_channel_is_no_longer_capped_at_ten_events():

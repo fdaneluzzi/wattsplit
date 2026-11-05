@@ -29,14 +29,14 @@ cloud services, neural networks.
 | Works on HA OS, Supervised, **Container, Core** | yes | HA OS / Supervised only |
 | Creates entities natively, attaches to existing devices | yes | via MQTT/REST workarounds |
 | Config UI (config flow, subentries, options) | native | build your own |
-| Own web UI | sidebar panel (§7) | ingress |
+| Own web UI | none needed: entities, Repairs, Energy dashboard (§8) | ingress |
 | Distribution | HACS, later possibly core | add-on repository |
 | Compute | light Python + numpy (shipped with HA) | only needed for heavy ML |
 
 The limits of an integration are about *interface*, not capability. What it
 gives us: config **subentries** (one per appliance), options flows, actions
 (services), recorder access, `Store`, our own SQLite file, executor threads for
-heavy work, `panel_custom` + websocket API for a real web UI.
+heavy work, Repairs flows and the Energy manager.
 
 The engine is pure Python with no HA imports, so if heavier compute is ever
 needed it can be wrapped in a headless service without a rewrite. That is the
@@ -48,7 +48,7 @@ escape hatch; it is not the plan.
 ┌───────────────────────────────────────────────────────────────┐
 │ Home Assistant layer       custom_components/wattsplit/        │
 │  config flow + subentries · coordinator (timer) · entities    │
-│  websocket API · sidebar panel · actions · Store · recorder   │
+│  Repairs · Energy dashboard · actions · recorder              │
 └──────────────┬────────────────────────────────▲───────────────┘
                │ Sample(ts, W)  StateEvent        │ Estimate per device
 ┌──────────────▼────────────────────────────────┴───────────────┐
@@ -210,18 +210,18 @@ on, and confidence:
 
 | Appliance | Power while on | Confidence | Usable intervals |
 |-----------|---------------:|-----------:|-----------------:|
-| Suite A/C | 732 W | 0.94 | 73 |
-| Varanda 2 A/C | 1253 W | 0.88 | 33 |
-| Felipe A/C | 51 W | 0.74 | 79 |
+| Bedroom 1 A/C | 732 W | 0.94 | 73 |
+| Veranda 2 A/C | 1253 W | 0.88 | 33 |
+| Bedroom 2 A/C | 51 W | 0.74 | 79 |
 | Washer | 213 W | 0.65 | 65 |
-| Varanda 1 A/C | 1874 W | 0.63 | 4 |
+| Veranda 1 A/C | 1874 W | 0.63 | 4 |
 | Living room A/C | 684 W | 0.60 | 34 |
 | Dining room A/C | 689 W | 0.48 | 19 |
 
 These are the *average draw while the entity reads "on"*, which is what energy
 accounting needs. They are not the compressor's power: a climate entity without
 `hvac_action` is "on" in any mode but off, so an A/C that mostly idles in cool
-mode (Felipe, 51 W) shows a low average. Varanda 1 rests on only 4 usable
+mode (Bedroom 2, 51 W) shows a low average. Veranda 1 rests on only 4 usable
 intervals and should be read with that in mind.
 
 Two defects found by this run, both fixed: the recorder returns `LazyState`
@@ -333,8 +333,9 @@ from what was declared when left unset):
 Edges nobody explains are not discarded. The `Discoverer` pairs each unexplained
 rise with a matching fall (same magnitude ±10 %, within 4 h), clusters pairs by
 level, and exposes **candidates**: *"≈ 4 400 W, 3 times, ~10 min each, around
-19:00"*. The user names a candidate in the panel, which assigns it to a latent
-device (`assign_candidate`), and from then on that load is recognised live.
+19:00"*. Each good candidate becomes a Repairs item; answering it assigns the load to
+a latent device (`assign_candidate`, also available as an action), and from then on
+that load is recognised live.
 One-off events never become candidates (default minimum: 2 occurrences).
 
 ## 5. Learning over time
@@ -523,41 +524,33 @@ a parameter reprocesses history reproducibly.
    (`declared`, `learned_from_state`, `inferred_from_edges`,
    `awaiting_discovery`). The UI says "estimated", never "measured".
 
-## 8. User interface (no app, no add-on)
+## 8. User interface (no app, no add-on, no panel)
 
-Three layers, in order of effort:
+A community integration cannot depend on every user building a dashboard, and a
+sidebar panel is a large frontend to maintain, so the interface is what Home
+Assistant already provides:
 
-1. **Config flow + subentries + options flow:** aggregate sources (with lag),
-   one subentry per appliance with its power mode.
-2. **Entities + stock cards:** history graphs, stacked charts, diagnostics.
-3. **WattSplit sidebar panel** (admin only), served by the integration through
-   `panel_custom` and a websocket API. A Lit web component, bundle committed to
-   the repo (HACS ships it as-is). Screens:
-   - **Timeline:** aggregate power with coloured bands per attributed device
-     and an "untracked" remainder; click an edge to see why it was attributed.
-   - **Sessions:** the history of runs per device with probabilities; confirm,
-     reassign, mark "not mine", delete, split / merge, adjust times (§6).
-   - **Discovery inbox:** candidates with level, count, duration, typical hour;
-     name / merge / dismiss.
-   - **Devices:** power mode, levels, pin, confidence over time.
-   - **Tune & replay:** change lag or window, replay the last N days, compare
-     before/after, mark ranges to ignore.
-
-The panel is real frontend work and is scheduled with the engine's learning
-features (M2), not deferred.
+1. **Config flow + subentries + options flow:** measurement sources (with their
+   roles), one subentry per appliance, and a few tuning options.
+2. **Entities:** estimated power and energy per appliance (attached to the
+   appliance's own device when it has one), house and untracked power, and
+   diagnostic entities (discovered loads, accuracy check).
+3. **Repairs:** the discovery inbox as fixable questions (see "What the user sees,
+   without building a dashboard" above).
+4. **The Energy dashboard:** import appliances from it and, opt-in, add estimates
+   to it.
 
 ## 9. Entities created
 
-Per latent device: `binary_sensor.<name>_running`, `sensor.<name>_power` (W),
-`sensor.<name>_energy` (kWh).
+Per appliance: `sensor.<name>_estimated_power` (W) and `sensor.<name>_estimated_energy`
+(kWh), attached to the appliance's existing device when it has one; a `Running`
+binary sensor for appliances WattSplit infers.
 
-Per state-only device: `sensor.<entity>_estimated_power`, `…_estimated_energy`,
-attached to the **existing** device in the registry.
+Global: `House power`, `Untracked power`, `Untracked energy`, and the diagnostic
+`Discovered loads` and `Accuracy check`.
 
-Global: `sensor.wattsplit_untracked_power`, `…_untracked_energy`,
-`…_tracked_share` (%).
-
-Inferred entities expose `confidence`, `source` and `power_mode` attributes.
+Inferred entities expose `confidence`, `source`, `power_mode` and `evidence`
+attributes. Entity names come from the translations; English is the default.
 
 ## 10. Positioning
 
@@ -572,14 +565,18 @@ Inferred entities expose `confidence`, `source` and `power_mode` attributes.
 
 ## 11. Roadmap
 
-| Milestone | Content | Status |
-|-----------|---------|--------|
-| **M0 — engine core** | composer, step detector, latent + state devices, power modes, discovery, SQLite edge log, replay, simulator, tests | **done (21 tests)** |
-| **M1 — HA shell** | config flow + options + appliance subentries, coordinator with timer sampling, entities (attached to the source device for state-only appliances), state-event capture, `pin` / `assign_candidate` actions, en + pt-BR. Learned state is rebuilt by replaying the SQLite log on startup, so no separate `Store` is needed. | **deployed on HA 2026.10.4; learning from real toggles not yet observed** |
-| **M2a — engine: channels & sessions** | (1) multiple input channels (per phase) with noise-adaptive thresholds; (2) difference-of-means estimator for state devices; (3) bad-reading rejection and per-input rates/lag; (4) variable-power model; (5) session ledger, labels and session-level scoring; recorder bootstrap. Order set by the first real-world tests (§13). Items (1)–(3) are built and tested (83 tests; 100/100 simulated three-channel houses, 96/100 single-channel, never confidently wrong); validated on real history at the real 15 s / 61 s rates; wired into the HA layer, **not yet verified live**. | **in progress** |
-| **M2b — panel** | sidebar panel: timeline, sessions & corrections, discovery inbox, devices, tune & replay; websocket API; diagnostics / self-validation | |
-| **M3 — harder devices** | NNLS multi-level, combination matcher, per-phase aggregates, model snapshots, optional statistics import for corrected energy | |
-| **M4 — community** | device-profile library (JSON, like Powercalc's), docs, HACS default-repo submission, Silver quality scale | |
+Done: engine core (steps, channels, power modes, discovery, edge log, replay,
+simulator), Home Assistant shell (config flow, subentries, entities), energy
+counters and history bootstrap, Energy dashboard import/export, Repairs inbox,
+cycle levels and association, English plus pt-BR.
+
+Next, in rough order:
+
+- Combination matching (a shower step that includes a pump switching on with it).
+- Tests for the Home Assistant layer (the engine is well covered, the shell is not).
+- Verifying other topologies: single phase, no solar, other meters.
+- A device-profile library (typical power of common appliances), like Powercalc's.
+- Home Assistant 2026.11 and later.
 
 ## 12. Home Assistant API notes (verified against 2026.10.4)
 
@@ -663,6 +660,5 @@ slow and says so, rather than committing to a number the data does not support.
 
 ## 14. Open decisions
 
-- License (MIT vs. Apache-2.0).
-- GitHub owner/repo and `codeowners` for the manifest (placeholders today).
-- Panel frontend stack details (Lit + Vite is the default assumption).
+- Whether to submit to the HACS default repository once there is feedback from
+  setups other than the author's.
