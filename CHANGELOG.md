@@ -4,6 +4,8 @@
 
 - Fix: an appliance with no entity could stay "on" for hours after a missed down-step (issue #3), inflating its energy and zeroing the untracked power. Now a rise of the appliance's own size while it is "on" starts a new run, an inferred run is closed when the whole-home power is far below what the running inferred appliances claim, and a run far longer than any it has finished is closed. A closing step also goes to an open run over a weaker claim by an appliance with an entity.
 - The Repairs question for a discovered load now lists its latest runs (date, start-end, length, power), and the `Discovered loads` sensor exposes, per load, runs by hour of day, runs by length and the latest runs (issue #2).
+- New `Base load` sensor: what the home draws when nothing is going on (low percentile of the last 24 h of per-minute whole-home power). It is the part of "untracked" no appliance will explain.
+- The diagnostic `Accuracy check` is renamed `Estimate error`: its value is a mean difference in percent (lower is better) and it now says how many appliances it compared.
 - Fix: the discovery inbox paired a rise with the oldest matching fall, inventing runs of hours when a fall was lost; it now pairs each fall with the most recent rise.
 
 ## 0.5.0 - first public beta

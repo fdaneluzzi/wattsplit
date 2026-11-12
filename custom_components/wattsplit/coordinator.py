@@ -48,6 +48,7 @@ from .const import (
     SUBENTRY_APPLIANCE,
 )
 from .engine import (
+    BaseLoad,
     Candidate,
     Disaggregator,
     EdgeLog,
@@ -94,6 +95,7 @@ class WattSplitData:
     detection: dict[str, Any] = field(default_factory=dict)
     validation: dict[str, Any] = field(default_factory=dict)
     cross_checks: dict[str, Any] = field(default_factory=dict)
+    base_w: float | None = None
 
 
 class WattSplitCoordinator(DataUpdateCoordinator[WattSplitData]):
@@ -174,6 +176,7 @@ class WattSplitCoordinator(DataUpdateCoordinator[WattSplitData]):
         self._unsub_states: Any = None
         self._debouncer = StateDebouncer(DEBOUNCE_S)
         self._issue_ids: set[str] = set()
+        self._base = BaseLoad()
 
     async def async_setup(self) -> None:
         """Open the log and rebuild learned state by replaying it."""
@@ -522,6 +525,7 @@ class WattSplitCoordinator(DataUpdateCoordinator[WattSplitData]):
             return self._read(sensor, now)
 
         house = consumption_w(src, show_read)
+        self._base.add(now, house)
         readings = channel_values(plan, src, detect_read)
         measured = self._read_measured_w(now)
         if len(plan.detect) == 1:  # a metered appliance is inside the one signal
@@ -590,6 +594,7 @@ class WattSplitCoordinator(DataUpdateCoordinator[WattSplitData]):
             detection=self._describe_detection(plan),
             validation=self._validation_report(),
             cross_checks=self._cross_checks(),
+            base_w=self._base.value(),
         )
 
     def occurrence_lines(self, candidate: Candidate) -> str:

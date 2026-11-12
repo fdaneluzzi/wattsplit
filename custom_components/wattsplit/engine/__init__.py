@@ -4,6 +4,7 @@ Pure Python, no Home Assistant imports, so it can be tested in isolation and
 later published as its own package.
 """
 
+from .baseload import BaseLoad
 from .composer import house_power_w
 from .counter import CounterEstimator
 from .debounce import StateDebouncer
@@ -18,6 +19,7 @@ from .timing import RateTracker, Timing, timing_for
 from .validation import Validator
 
 __all__ = [
+    "BaseLoad",
     "Candidate",
     "CounterEstimator",
     "DeviceSpec",

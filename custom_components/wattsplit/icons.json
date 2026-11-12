@@ -21,6 +21,9 @@
       },
       "estimated_energy": {
         "default": "mdi:counter"
+      },
+      "base_load": {
+        "default": "mdi:power-sleep"
       }
     },
     "binary_sensor": {

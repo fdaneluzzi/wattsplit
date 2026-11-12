@@ -549,8 +549,11 @@ Per appliance: `sensor.<name>_estimated_power` (W) and `sensor.<name>_estimated_
 (kWh), attached to the appliance's existing device when it has one; a `Running`
 binary sensor for appliances WattSplit infers.
 
-Global: `House power`, `Untracked power`, `Untracked energy`, and the diagnostic
-`Discovered loads` and `Accuracy check`.
+Global: `House power`, `Base load` (the 5th percentile of the per-minute whole-home
+power over the last 24 h, available after an hour of data), `Untracked power`,
+`Untracked energy`, and the diagnostic `Discovered loads` and `Estimate error` (the
+mean absolute difference in percent between the estimates and the real sensors or
+counters that can be compared; its entity id keeps the old `accuracy_check` key).
 
 Inferred entities expose `confidence`, `source`, `power_mode` and `evidence`
 attributes. Entity names come from the translations; English is the default.

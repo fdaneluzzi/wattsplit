@@ -39,6 +39,7 @@ async def async_setup_entry(
             HousePowerSensor(coordinator),
             UntrackedPowerSensor(coordinator),
             UntrackedEnergySensor(coordinator),
+            BaseLoadSensor(coordinator),
             CandidatesSensor(coordinator),
             AccuracyCheckSensor(coordinator),
         ]
@@ -147,6 +148,15 @@ class UntrackedPowerSensor(_GlobalPower):
         super().__init__(coordinator, "untracked_power")
 
 
+class BaseLoadSensor(_GlobalPower):
+    """What the home draws when nothing is going on (needs an hour of data)."""
+
+    _value = staticmethod(lambda d: d.base_w)
+
+    def __init__(self, coordinator: WattSplitCoordinator) -> None:
+        super().__init__(coordinator, "base_load")
+
+
 class UntrackedEnergySensor(_EnergyMixin, GlobalEntity):
     def __init__(self, coordinator: WattSplitCoordinator) -> None:
         super().__init__(coordinator, "untracked_energy")
@@ -235,7 +245,11 @@ class AccuracyCheckSensor(GlobalEntity, SensorEntity):
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
         data = self.coordinator.data
-        return {"appliances": data.validation, "counter_vs_channels": data.cross_checks}
+        return {
+            "appliances_compared": len(data.validation) + len(data.cross_checks),
+            "appliances": data.validation,
+            "counter_vs_channels": data.cross_checks,
+        }
 
 
 # -- appliances ---------------------------------------------------------------

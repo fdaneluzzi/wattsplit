@@ -153,7 +153,10 @@
         "name": "Estimated energy"
       },
       "accuracy_check": {
-        "name": "Accuracy check"
+        "name": "Estimate error"
+      },
+      "base_load": {
+        "name": "Base load"
       }
     },
     "binary_sensor": {

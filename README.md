@@ -32,10 +32,10 @@ Everything runs locally. Nothing leaves your Home Assistant.
 |---|---|
 | Estimated power (W) and energy (kWh) per appliance, attached to the appliance's own device when it has one | Entities, Energy dashboard |
 | A "running" binary sensor for appliances WattSplit infers | Entities |
-| House power, untracked power and energy (what is still not explained) | Entities |
+| House power, base load (what the home draws when nothing is going on), untracked power and energy (what is still not explained) | Entities |
 | Recurring loads WattSplit cannot explain, as a short question: *"A load of about 1340 W switched on 68 times over 7 days, about 6 minutes each. What is it?"*, followed by the date, start, end, length and power of its latest runs so you can match them with what you did | **Settings > Repairs** |
 | Estimated appliances listed next to the rest in the Energy dashboard (opt-in) | Energy dashboard |
-| How much each estimate rests on (`evidence`), and an accuracy check against the appliances' own counters | Entity attributes, diagnostic entities |
+| How much each estimate rests on (`evidence`), and an estimate-error check against the appliances' own counters | Entity attributes, diagnostic entities |
 
 There is no dashboard to build and no sidebar panel. Everything lives in places Home Assistant already has.
 
