@@ -35,9 +35,14 @@ class Candidate:
     recent: tuple[tuple[float, float, float], ...] = ()
     hour_counts: tuple[int, ...] = ()  # occurrences starting in each local hour (24)
     duration_counts: tuple[int, ...] = ()  # runs per DURATION_EDGES_S bucket (6)
+    # share of the runs that overlap another run of the same group: one appliance
+    # cannot be on twice at once, so these are several sources or a wrong pairing
+    overlap_share: float = 0.0
     likely_device: str | None = None  # a state device that is on suspiciously often then
     lift: float = 0.0  # how much more often than by chance
     share_on: float = 0.0  # share of occurrences during which that device was on
+
+    MAX_OVERLAP_SHARE = 0.2
 
     @property
     def concentrated(self) -> bool:
@@ -46,8 +51,16 @@ class Candidate:
 
     @property
     def coherent(self) -> bool:
-        """Its runs last about the same; a very wide spread means several sources."""
-        return self.duration_p90_s <= 25.0 * max(self.duration_p10_s, 30.0)
+        """Looks like one source: runs last about the same and do not overlap.
+
+        A very wide spread of lengths means several sources. So does overlap: the
+        same appliance cannot start again while it is still running. A stray overlap
+        or two (a mispaired run) is tolerated in a group with many runs.
+        """
+        return (
+            self.duration_p90_s <= 25.0 * max(self.duration_p10_s, 30.0)
+            and self.overlap_share <= self.MAX_OVERLAP_SHARE
+        )
 
 
 @dataclass(frozen=True, slots=True)
@@ -75,12 +88,37 @@ class Discoverer:
     def add(self, edge: Edge) -> None:
         self._edges.append(edge)
 
-    def _pairs(self) -> list[_Pair]:
-        """Match each fall with the most recent unmatched rise of the same size.
+    # How different the phases of a rise and of its fall may be (0 = the same share on
+    # every channel, 1 = no channel in common). Real runs of one appliance rise and
+    # fall on the same channels: on one house, short pump runs had a median of 0.00 and
+    # 95 % were under 0.2, while 40 % of the pairs found by size alone were above it.
+    _MAX_FOOTPRINT_DISTANCE = 0.3
+    _FOOTPRINT_TIE = 0.1  # closer than this counts as equally good: take the most recent
 
-        Most recent, not oldest: when a fall is lost, the load's next rise and fall
-        should still pair with each other. Pairing the old rise with the later fall
-        invented runs of hours (and left the real run unpaired).
+    @staticmethod
+    def _footprint_distance(rise: Edge, fall: Edge) -> float | None:
+        """Total-variation distance between the channel shares of two steps.
+
+        ``None`` when either has no per-channel breakdown (nothing to compare).
+        """
+        a = {c: abs(p) for c, p in rise.parts}
+        b = {c: abs(p) for c, p in fall.parts}
+        total_a, total_b = sum(a.values()), sum(b.values())
+        if not total_a or not total_b:
+            return None
+        return 0.5 * sum(
+            abs(a.get(c, 0.0) / total_a - b.get(c, 0.0) / total_b) for c in a.keys() | b.keys()
+        )
+
+    def _pairs(self) -> list[_Pair]:
+        """Match each fall with an unmatched rise of the same size and the same phases.
+
+        Among the rises of the right size the one whose channels look most like the
+        fall wins, and the most recent when they are about equally good: when a fall
+        is lost, the load's next rise and fall should still pair with each other, and
+        pairing the old rise with the later fall invented runs of hours. A rise and a
+        fall that share almost no channels are two different loads and are not paired,
+        however close their sizes.
         """
         edges = sorted(self._edges, key=lambda e: e.ts)
         open_rises: list[Edge] = []
@@ -90,20 +128,29 @@ class Discoverer:
                 open_rises.append(edge)
                 continue
             open_rises = [r for r in open_rises if edge.ts - r.ts <= self._max_duration_s]
+            best: tuple[int, float] | None = None
             for k in range(len(open_rises) - 1, -1, -1):
                 rise = open_rises[k]
-                if abs(-edge.delta_w - rise.delta_w) <= self._tol * rise.delta_w:
-                    del open_rises[k]
-                    pairs.append(
-                        _Pair(
-                            (rise.delta_w - edge.delta_w) / 2,
-                            rise.ts,
-                            edge.ts - rise.ts,
-                            rise,
-                            edge,
-                        )
-                    )
-                    break
+                if abs(-edge.delta_w - rise.delta_w) > self._tol * rise.delta_w:
+                    continue
+                distance = self._footprint_distance(rise, edge)
+                if distance is not None and distance > self._MAX_FOOTPRINT_DISTANCE:
+                    continue
+                score = distance or 0.0
+                if best is None or score < best[1] - self._FOOTPRINT_TIE:
+                    best = (k, score)
+            if best is None:
+                continue
+            rise = open_rises.pop(best[0])
+            pairs.append(
+                _Pair(
+                    (rise.delta_w - edge.delta_w) / 2,
+                    rise.ts,
+                    edge.ts - rise.ts,
+                    rise,
+                    edge,
+                )
+            )
         return pairs
 
     def _clusters(self) -> list[list[_Pair]]:
@@ -154,6 +201,19 @@ class Discoverer:
         return ordered[min(len(ordered) - 1, int(q * len(ordered)))]
 
     @staticmethod
+    def _overlap_share(group: list[_Pair]) -> float:
+        """Share of the runs that overlap another run in the group."""
+        runs = sorted((p.start_ts, p.start_ts + p.duration_s) for p in group)
+        overlapping: set[int] = set()
+        latest_end, holder = float("-inf"), -1
+        for i, (start, end) in enumerate(runs):
+            if start < latest_end:
+                overlapping.update((i, holder))
+            if end > latest_end:
+                latest_end, holder = end, i
+        return len(overlapping) / len(runs) if runs else 0.0
+
+    @staticmethod
     def _duration_counts(durations: list[float]) -> tuple[int, ...]:
         counts = [0] * (len(DURATION_EDGES_S) + 1)
         for value in durations:
@@ -186,6 +246,7 @@ class Discoverer:
                         sum(1 for t in starts if hour_of_day(t) == h) for h in range(24)
                     ),
                     duration_counts=self._duration_counts(durations),
+                    overlap_share=self._overlap_share(group),
                 )
             )
         return sorted(out, key=lambda c: c.count, reverse=True)

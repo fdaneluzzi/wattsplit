@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Discovered loads: the inbox now pairs a rise with a fall only when they share the same phases, preferring the rise whose phases look most like the fall's (a rise and a fall that share almost no phase are different loads), and a group whose runs overlap in time is no longer offered as one load: one appliance cannot be on twice at once. On one house this removed a third of the pairs found by size alone. The `Discovered loads` sensor shows `overlapping_runs_share` per load.
+
 - Repairs: a new answer, "Skip for now: I do not know what it is. Ask me again the next time it runs". A skipped load leaves the inbox and comes back, with its new run listed, the next time it runs (or after 60 days). Home Assistant's own "Ignore" on the item still hides a load for good, and ignored or skipped loads no longer take one of the three inbox slots from a load nobody has answered yet.
 
 ## 0.5.2 - 2026-11-12

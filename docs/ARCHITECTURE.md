@@ -306,6 +306,21 @@ one source is not offered as a question. A device can also not be suggested as o
 of a load more than 3 times its own learned power (a 300 W appliance does not cycle
 1.3 kW).
 
+### Pairing needs the same phases, and one appliance cannot be on twice
+
+Pairing by size alone joined rises and falls of different appliances: on one house
+40 % of the pairs had a rise and a fall with almost no phase in common, against 5 %
+of the short runs of a pump known to be one appliance (median distance 0.00). The
+`Discoverer` now measures, for a rise and a fall, the total-variation distance between
+their channel shares (0 = the same shares, 1 = no common channel), refuses pairs above
+0.3, and among equal-sized rises takes the closest, and the most recent when about
+equally close (steps with no per-channel breakdown still pair by size). A candidate
+also reports `overlap_share`, the share of its runs that overlap another of its runs;
+the same appliance cannot start while it still runs, so above 20 % it is several
+sources (or a wrong pairing) and is not offered as one load. Run on the author's log
+this took 437 pairs to 300 and the loads offered in Repairs from 34 to 21. The price
+is a few real runs lost where an appliance's phases are unstable (3 of 63 pump runs).
+
 ### Smaller fixes behind it
 
 - Toggle evidence per channel was capped at 10 events (the cap of 40 records was

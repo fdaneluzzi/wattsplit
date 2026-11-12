@@ -196,6 +196,7 @@ class CandidatesSensor(GlobalEntity, SensorEntity):
                     ],
                     "typical_hour": c.typical_hour,
                     "coherent": c.coherent,
+                    "overlapping_runs_share": round(c.overlap_share, 2),
                     "runs_by_hour": list(c.hour_counts),
                     "runs_by_length": dict(zip(_LENGTH_LABELS, c.duration_counts)),
                     "recent": [
