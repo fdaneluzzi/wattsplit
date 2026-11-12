@@ -128,7 +128,8 @@
       "options": {
         "part_of": "It is part of the appliance suggested above",
         "assign": "It is one of my appliances (one without its own sensor)",
-        "new": "It is a new appliance"
+        "new": "It is a new appliance",
+        "skip": "Skip for now: I do not know what it is. Ask me again the next time it runs"
       }
     }
   },

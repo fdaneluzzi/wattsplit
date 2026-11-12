@@ -14,11 +14,13 @@ from .discovery import Candidate, Discoverer
 from .models import DeviceSpec, Edge, Estimate, PowerMode, Toggle
 from .plan import Plan, Sources, channel_values, choose_plan, consumption_w
 from .replay import replay
+from .snooze import Snoozes
 from .store import EdgeLog
 from .timing import RateTracker, Timing, timing_for
 from .validation import Validator
 
 __all__ = [
+    "Snoozes",
     "BaseLoad",
     "Candidate",
     "CounterEstimator",

@@ -128,7 +128,8 @@
       "options": {
         "part_of": "É parte do aparelho sugerido acima",
         "assign": "É um dos meus aparelhos (um sem sensor próprio)",
-        "new": "É um aparelho novo"
+        "new": "É um aparelho novo",
+        "skip": "Pular por agora: não sei o que é. Pergunte de novo na próxima vez que ela ligar"
       }
     }
   },

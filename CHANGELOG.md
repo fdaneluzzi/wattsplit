@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- Repairs: a new answer, "Skip for now: I do not know what it is. Ask me again the next time it runs". A skipped load leaves the inbox and comes back, with its new run listed, the next time it runs (or after 60 days). Home Assistant's own "Ignore" on the item still hides a load for good, and ignored or skipped loads no longer take one of the three inbox slots from a load nobody has answered yet.
+
 ## 0.5.2 - 2026-11-12
 
 - Run limit of an appliance with no entity: until it has finished five runs it is capped at 2 hours (it used to have no limit), and afterwards the limit follows the median and third quartile of its own runs (at least 15 minutes, eight times the median) instead of the 90th percentile, so a stuck run among the first few cannot raise it for good. Three similar runs that end by a down-step past the limit teach it a real long cycle. Suggested by Squixx on issue #3.

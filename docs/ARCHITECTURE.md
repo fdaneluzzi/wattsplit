@@ -253,8 +253,12 @@ Home Assistant already provides. No sidebar panel is planned.
   by hour of day and by length. The form offers: it is part of the appliance suggested
   (when one is on far more often than usual at that hour of the day), it is one of
   my appliances that has no sensor (assign its power), or it is a new appliance
-  (give it a name; WattSplit creates it and re-attributes the past). A dismissed
-  item stays dismissed; an assigned one leaves the inbox. (`repairs.py`)
+  (give it a name; WattSplit creates it and re-attributes the past). A skipped
+  load ("I do not know what it is") leaves the inbox until it runs again after the
+  skip, or 60 days pass (`engine/snooze.py`, persisted with a `Store`); a dismissed
+  item (Home Assistant's "Ignore") stays dismissed; an assigned one leaves the
+  inbox. Neither a skipped nor a dismissed load takes one of the three slots.
+  (`repairs.py`)
 - **The Energy dashboard.** In the options, "Add estimates to the Energy
   dashboard (once)" adds the estimated energy of appliances with no energy counter
   of their own (a pool pump, a shower) as individual devices, so they stop being

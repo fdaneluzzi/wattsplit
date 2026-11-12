@@ -39,6 +39,10 @@ Everything runs locally. Nothing leaves your Home Assistant.
 
 There is no dashboard to build and no sidebar panel. Everything lives in places Home Assistant already has.
 
+### When you do not know what a load is
+
+Pick **Skip for now** in the question. The load leaves Settings > Repairs and comes back the next time it runs, with that run in its list of latest runs, so you can match it with what you were doing. Use Home Assistant's own **Ignore** on the item to stop being asked about it for good.
+
 ## Requirements
 
 - Home Assistant **2026.10** or newer.

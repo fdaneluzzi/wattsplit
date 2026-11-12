@@ -24,6 +24,7 @@ class DiscoveredLoadFlow(RepairsFlow):
     def __init__(self, data: dict[str, Any]) -> None:
         self._level_w = float(data.get("level_w") or 0)
         self._likely = data.get("likely_device") or None
+        self._duration_s = float(data.get("duration_s") or 0)
         self._placeholders = {
             key: str(data.get(key, ""))
             for key in ("level_w", "count", "days", "hours", "minutes", "hour", "likely", "share", "recent")
@@ -44,7 +45,7 @@ class DiscoveredLoadFlow(RepairsFlow):
         # The first call carries the issue id, not an answer: only a real submission has `action`.
         if user_input is not None and "action" in user_input:
             return await getattr(self, f"async_step_{user_input['action']}")()
-        options = (["part_of"] if self._likely else []) + ["assign", "new"]
+        options = (["part_of"] if self._likely else []) + ["assign", "new", "skip"]
         return self.async_show_form(
             step_id="init",
             data_schema=vol.Schema(
@@ -60,6 +61,11 @@ class DiscoveredLoadFlow(RepairsFlow):
             ),
             description_placeholders=self._placeholders,
         )
+
+    async def async_step_skip(self, user_input: dict[str, Any] | None = None) -> RepairsFlowResult:
+        """Not sure what it is: leave it, and ask again the next time it runs."""
+        self._coordinator().snooze_candidate(self._level_w, self._duration_s)
+        return self.async_create_entry(data={})
 
     async def async_step_part_of(self, user_input: dict[str, Any] | None = None) -> RepairsFlowResult:
         """It is its compressor / heater cycling: count it as that appliance's own."""

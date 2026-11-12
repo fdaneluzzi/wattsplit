@@ -18,6 +18,7 @@ from homeassistant.helpers.event import (
     EventStateChangedData,
     async_track_state_change_event,
 )
+from homeassistant.helpers.storage import Store
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 from homeassistant.util import dt as dt_util
 
@@ -58,6 +59,7 @@ from .engine import (
     Plan,
     PowerMode,
     RateTracker,
+    Snoozes,
     StateDebouncer,
     Timing,
     Validator,
@@ -177,6 +179,10 @@ class WattSplitCoordinator(DataUpdateCoordinator[WattSplitData]):
         self._debouncer = StateDebouncer(DEBOUNCE_S)
         self._issue_ids: set[str] = set()
         self._base = BaseLoad()
+        self._snoozes = Snoozes()
+        self._snooze_store: Store[dict[str, Any]] = Store(
+            hass, 1, f"{DOMAIN}.{entry.entry_id}.snoozed"
+        )
 
     async def async_setup(self) -> None:
         """Open the log and rebuild learned state by replaying it."""
@@ -186,6 +192,8 @@ class WattSplitCoordinator(DataUpdateCoordinator[WattSplitData]):
         self.log = await self.hass.async_add_executor_job(EdgeLog, path)
         cutoff = time.time() - LOG_RETENTION_DAYS * 86400
         await self.hass.async_add_executor_job(self.log.prune, cutoff)
+        stored = await self._snooze_store.async_load()
+        self._snoozes = Snoozes.from_list((stored or {}).get("snoozed"))
         try:
             await self._async_bootstrap_history()
         except Exception:  # noqa: BLE001 - history is a bonus, it must never stop setup
@@ -689,6 +697,25 @@ class WattSplitCoordinator(DataUpdateCoordinator[WattSplitData]):
 
     # -- discovered loads: Repairs ---------------------------------------------------------
 
+    @staticmethod
+    def _issue_id(candidate: Candidate) -> str:
+        # level and typical run length, so a pump's 6-minute cycles and a heater's
+        # 2-hour runs at the same power are different items
+        bucket = int(math.log(max(candidate.median_duration_s / 60.0, 0.5) / 0.5, 4))
+        return f"candidate_{int(round(candidate.level_w / 100.0)) * 100}_{bucket}"
+
+    def snooze_candidate(self, level_w: float, duration_s: float) -> None:
+        """The user does not know what this load is: ask again when it next runs."""
+        self._snoozes.add(level_w, duration_s, time.time())
+        self._snoozes.changed = False
+        self._save_snoozes()
+        self._sync_issues()
+
+    def _save_snoozes(self) -> None:
+        self._snooze_store.async_delay_save(
+            lambda: {"snoozed": self._snoozes.as_list()}, 1.0
+        )
+
     def _sync_issues(self) -> None:
         """Ask the user about the biggest recurring unexplained loads.
 
@@ -697,22 +724,30 @@ class WattSplitCoordinator(DataUpdateCoordinator[WattSplitData]):
         assigned leaves the engine's inbox and so disappears here.
         """
         titles = {sid: sub.title for sid, sub in self.config_entry.subentries.items()}
+        registry = ir.async_get(self.hass)
+
+        def ignored(candidate: Candidate) -> bool:
+            entry = registry.async_get_issue(DOMAIN, self._issue_id(candidate))
+            return entry is not None and entry.dismissed_version is not None
+
+        # A skipped load waits for its next run; an ignored one is never asked again.
+        # Neither may take one of the few slots from a load nobody has answered yet.
+        visible = self._snoozes.visible(self._candidates, time.time())
+        if self._snoozes.changed:
+            self._snoozes.changed = False
+            self._save_snoozes()
         ranked = sorted(
             (
                 c
-                for c in self._candidates
+                for c in visible
                 if c.coherent  # runs that last wildly different times are several sources
                 and c.count >= ISSUE_MIN_COUNT
                 and c.level_w >= ISSUE_MIN_LEVEL_W
+                and not ignored(c)
             ),
             key=lambda c: -c.count * c.level_w * c.median_duration_s,
         )[:MAX_ISSUES]
-        wanted = {}
-        for c in ranked:
-            # level and typical run length, so a pump's 6-minute cycles and a heater's
-            # 2-hour runs at the same power are different items
-            duration_bucket = int(math.log(max(c.median_duration_s / 60.0, 0.5) / 0.5, 4))
-            wanted[f"candidate_{int(round(c.level_w / 100.0)) * 100}_{duration_bucket}"] = c
+        wanted = {self._issue_id(c): c for c in ranked}
         for issue_id in self._issue_ids - set(wanted):
             ir.async_delete_issue(self.hass, DOMAIN, issue_id)
         for issue_id, c in wanted.items():
@@ -744,6 +779,7 @@ class WattSplitCoordinator(DataUpdateCoordinator[WattSplitData]):
                     "days": c.days,
                     "hours": len(c.hours),
                     "minutes": round(c.median_duration_s / 60),
+                    "duration_s": round(c.median_duration_s),
                     "hour": c.typical_hour,
                     "likely": likely or "",
                     "share": round(c.share_on * 100),
