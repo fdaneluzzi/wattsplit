@@ -20,3 +20,14 @@ def hour_of_day(ts: float, offset_s: int = _OFFSET_S) -> int:
 def day_of(ts: float, offset_s: int = _OFFSET_S) -> int:
     """A number that changes at local midnight (days since 1970, local)."""
     return int((ts + offset_s) // 86400)
+
+
+def format_duration(seconds: float) -> str:
+    """"45 s", "7 min", "2 h 14 min": short and the same in every language."""
+    seconds = max(0.0, seconds)
+    if seconds < 90:
+        return f"{round(seconds)} s"
+    minutes = round(seconds / 60)
+    if minutes < 90:
+        return f"{minutes} min"
+    return f"{minutes // 60} h {minutes % 60:02d} min"

@@ -17,10 +17,14 @@ from homeassistant.const import EntityCategory, UnitOfEnergy, UnitOfPower
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import entity_platform
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
+from homeassistant.util import dt as dt_util
 
 from .const import ENERGY_PUBLISH_S
 from .coordinator import WattSplitConfigEntry, WattSplitCoordinator, WattSplitData
 from .entity import ApplianceEntity, GlobalEntity
+
+# Labels of Candidate.duration_counts (see engine.discovery.DURATION_EDGES_S).
+_LENGTH_LABELS = ("under_1_min", "1_to_5_min", "5_to_15_min", "15_to_60_min", "1_to_3_h", "over_3_h")
 
 
 async def async_setup_entry(
@@ -156,6 +160,8 @@ class CandidatesSensor(GlobalEntity, SensorEntity):
 
     _attr_state_class = SensorStateClass.MEASUREMENT
     _attr_entity_category = EntityCategory.DIAGNOSTIC
+    # A long list that changes with every candidate: not worth a recorder row each time.
+    _unrecorded_attributes = frozenset({"candidates"})
 
     def __init__(self, coordinator: WattSplitCoordinator) -> None:
         super().__init__(coordinator, "candidates")
@@ -180,6 +186,18 @@ class CandidatesSensor(GlobalEntity, SensorEntity):
                     ],
                     "typical_hour": c.typical_hour,
                     "coherent": c.coherent,
+                    "runs_by_hour": list(c.hour_counts),
+                    "runs_by_length": dict(zip(_LENGTH_LABELS, c.duration_counts)),
+                    "recent": [
+                        {
+                            "start": dt_util.as_local(dt_util.utc_from_timestamp(start)).isoformat(
+                                timespec="seconds"
+                            ),
+                            "duration_s": round(duration),
+                            "level_w": round(level),
+                        }
+                        for start, duration, level in c.recent
+                    ],
                 }
                 for c in self.coordinator.data.candidates
             ]

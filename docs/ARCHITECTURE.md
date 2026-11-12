@@ -247,7 +247,10 @@ Home Assistant already provides. No sidebar panel is planned.
   the same) becomes a fixable item: "WattSplit saw a load of about 7932 W switch on
   4 times over 3 days, about 15 minutes each, around 19h, and none of your
   appliances explains it. What is it?" A load that happens at many hours of the day
-  says "at 11 different hours of the day" instead of inventing a time. The form offers: it is part of the appliance suggested
+  says "at 11 different hours of the day" instead of inventing a time. The item
+  ends with the latest five runs (`2026-11-10 18:42–18:49 (7 min, 1340 W)`), so the
+  user can match them against what they did; the `Discovered loads` sensor adds runs
+  by hour of day and by length. The form offers: it is part of the appliance suggested
   (when one is on far more often than usual at that hour of the day), it is one of
   my appliances that has no sensor (assign its power), or it is a new appliance
   (give it a name; WattSplit creates it and re-attributes the past). A dismissed

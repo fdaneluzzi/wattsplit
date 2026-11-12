@@ -26,7 +26,7 @@ class DiscoveredLoadFlow(RepairsFlow):
         self._likely = data.get("likely_device") or None
         self._placeholders = {
             key: str(data.get(key, ""))
-            for key in ("level_w", "count", "days", "hours", "minutes", "hour", "likely", "share")
+            for key in ("level_w", "count", "days", "hours", "minutes", "hour", "likely", "share", "recent")
         }
         self._placeholders["level"] = self._placeholders["level_w"]
 

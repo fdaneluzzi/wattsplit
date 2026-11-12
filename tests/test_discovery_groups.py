@@ -74,3 +74,28 @@ def test_a_small_appliance_is_not_offered_as_owner_of_a_much_larger_load():
         diss.on_state("ac", False, start + 7_000)
     big = [c for c in diss.candidates(min_count=3) if abs(c.level_w - 1340) < 100]
     assert big and all(c.likely_device is None for c in big)
+
+
+def test_a_candidate_lists_its_latest_runs_newest_first_with_hours_and_lengths():
+    disc = Discoverer()
+    day = 86_400.0
+    starts = [1_000_000 + d * day for d in range(8)]
+    _pairs(disc, 5500.0, starts, 600.0)
+    (shower,) = disc.candidates(min_count=3)
+
+    assert len(shower.recent) == 5
+    assert [r[0] for r in shower.recent] == sorted(starts, reverse=True)[:5]
+    assert all(r[1] == pytest.approx(600.0) and r[2] == pytest.approx(5500.0) for r in shower.recent)
+    assert sum(shower.hour_counts) == 8 and len(shower.hour_counts) == 24
+    # 10-minute runs fall in the "5 to 15 minutes" bucket
+    assert shower.duration_counts == (0, 0, 8, 0, 0, 0)
+
+
+def test_durations_are_written_the_same_in_every_language():
+    from engine.clock import format_duration
+
+    assert format_duration(45) == "45 s"
+    assert format_duration(420) == "7 min"
+    assert format_duration(5_100) == "85 min"
+    assert format_duration(5_400) == "1 h 30 min"
+    assert format_duration(8_040) == "2 h 14 min"

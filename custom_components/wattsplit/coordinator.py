@@ -66,6 +66,7 @@ from .engine import (
     replay,
     timing_for,
 )
+from .engine.clock import format_duration
 from .helpers import (
     energy_wh,
     format_levels,
@@ -591,6 +592,18 @@ class WattSplitCoordinator(DataUpdateCoordinator[WattSplitData]):
             cross_checks=self._cross_checks(),
         )
 
+    def occurrence_lines(self, candidate: Candidate) -> str:
+        """The latest runs of a discovered load, one markdown line each, local time."""
+        lines = []
+        for start, duration, level in candidate.recent:
+            begin = dt_util.as_local(dt_util.utc_from_timestamp(start))
+            end = dt_util.as_local(dt_util.utc_from_timestamp(start + duration))
+            lines.append(
+                f"- {begin:%Y-%m-%d %H:%M}\u2013{end:%H:%M} "
+                f"({format_duration(duration)}, {level:.0f} W)"
+            )
+        return "\n".join(lines)
+
     def _cross_checks(self) -> dict[str, Any]:
         """Whole-house channels versus the appliance's own energy counter."""
         subentries = self.config_entry.subentries
@@ -699,6 +712,7 @@ class WattSplitCoordinator(DataUpdateCoordinator[WattSplitData]):
             ir.async_delete_issue(self.hass, DOMAIN, issue_id)
         for issue_id, c in wanted.items():
             likely = titles.get(c.likely_device) if c.likely_device else None
+            recent = self.occurrence_lines(c)
             key = "discovered_load" + ("" if c.concentrated else "_spread") + ("_likely" if likely else "")
             ir.async_create_issue(
                 self.hass,
@@ -716,6 +730,7 @@ class WattSplitCoordinator(DataUpdateCoordinator[WattSplitData]):
                     "hour": f"{c.typical_hour:02d}",
                     "likely": likely or "",
                     "share": f"{c.share_on * 100:.0f}",
+                    "recent": recent,
                 },
                 data={
                     "level_w": round(c.level_w),
@@ -727,6 +742,7 @@ class WattSplitCoordinator(DataUpdateCoordinator[WattSplitData]):
                     "hour": c.typical_hour,
                     "likely": likely or "",
                     "share": round(c.share_on * 100),
+                    "recent": recent,
                 },
             )
         self._issue_ids = set(wanted)

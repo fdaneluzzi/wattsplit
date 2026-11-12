@@ -185,7 +185,7 @@
         "step": {
           "init": {
             "title": "Carga recorrente de cerca de {level} W",
-            "description": "O WattSplit viu uma carga de cerca de {level} W ligar {count} vezes em {days} dias, cerca de {minutes} minutos cada, por volta das {hour}h, e nenhum dos seus aparelhos a explica. O que é?",
+            "description": "O WattSplit viu uma carga de cerca de {level} W ligar {count} vezes em {days} dias, cerca de {minutes} minutos cada, por volta das {hour}h, e nenhum dos seus aparelhos a explica. O que é?\n\nÚltimas ocorrências (início–fim, duração, potência):\n{recent}",
             "data": {
               "action": "O que é?"
             }
@@ -217,7 +217,7 @@
         "step": {
           "init": {
             "title": "Carga recorrente de cerca de {level} W",
-            "description": "O WattSplit viu uma carga de cerca de {level} W ligar {count} vezes em {days} dias, cerca de {minutes} minutos cada, por volta das {hour}h. {likely} estava ligado em {share}% dessas vezes, bem mais do que o normal nessa hora do dia. Se ela for parte de {likely} (por exemplo o compressor ciclando), o WattSplit passa a contá-la como dele enquanto estiver ligado. O que é?",
+            "description": "O WattSplit viu uma carga de cerca de {level} W ligar {count} vezes em {days} dias, cerca de {minutes} minutos cada, por volta das {hour}h. {likely} estava ligado em {share}% dessas vezes, bem mais do que o normal nessa hora do dia. Se ela for parte de {likely} (por exemplo o compressor ciclando), o WattSplit passa a contá-la como dele enquanto estiver ligado. O que é?\n\nÚltimas ocorrências (início–fim, duração, potência):\n{recent}",
             "data": {
               "action": "O que é?"
             }
@@ -249,7 +249,7 @@
         "step": {
           "init": {
             "title": "Carga recorrente de cerca de {level} W",
-            "description": "O WattSplit viu uma carga de cerca de {level} W ligar {count} vezes em {days} dias, cerca de {minutes} minutos cada, em {hours} horas diferentes do dia, e nenhum dos seus aparelhos a explica. O que é?",
+            "description": "O WattSplit viu uma carga de cerca de {level} W ligar {count} vezes em {days} dias, cerca de {minutes} minutos cada, em {hours} horas diferentes do dia, e nenhum dos seus aparelhos a explica. O que é?\n\nÚltimas ocorrências (início–fim, duração, potência):\n{recent}",
             "data": {
               "action": "O que é?"
             }
@@ -281,7 +281,7 @@
         "step": {
           "init": {
             "title": "Carga recorrente de cerca de {level} W",
-            "description": "O WattSplit viu uma carga de cerca de {level} W ligar {count} vezes em {days} dias, cerca de {minutes} minutos cada, em {hours} horas diferentes do dia. {likely} estava ligado em {share}% dessas vezes, bem mais do que o normal nessa hora do dia. Se ela for parte de {likely} (por exemplo o compressor ciclando), o WattSplit passa a contá-la como dele enquanto estiver ligado. O que é?",
+            "description": "O WattSplit viu uma carga de cerca de {level} W ligar {count} vezes em {days} dias, cerca de {minutes} minutos cada, em {hours} horas diferentes do dia. {likely} estava ligado em {share}% dessas vezes, bem mais do que o normal nessa hora do dia. Se ela for parte de {likely} (por exemplo o compressor ciclando), o WattSplit passa a contá-la como dele enquanto estiver ligado. O que é?\n\nÚltimas ocorrências (início–fim, duração, potência):\n{recent}",
             "data": {
               "action": "O que é?"
             }

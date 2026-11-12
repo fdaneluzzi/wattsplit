@@ -7,12 +7,17 @@ name, which then become latent devices.
 
 from __future__ import annotations
 
+from bisect import bisect_right
 from collections import deque
 from dataclasses import dataclass
 from statistics import median
 
 from .clock import day_of, hour_of_day
 from .models import Edge
+
+# Run-length buckets of a candidate: <1 min, 1-5, 5-15, 15-60, 1-3 h, over 3 h.
+DURATION_EDGES_S = (60.0, 300.0, 900.0, 3600.0, 10800.0)
+RECENT_OCCURRENCES = 5
 
 
 @dataclass(frozen=True, slots=True)
@@ -26,6 +31,10 @@ class Candidate:
     duration_p10_s: float = 0.0
     duration_p90_s: float = 0.0
     starts: tuple[float, ...] = ()  # when each occurrence began
+    # the latest occurrences, newest first: (start_ts, duration_s, level_w)
+    recent: tuple[tuple[float, float, float], ...] = ()
+    hour_counts: tuple[int, ...] = ()  # occurrences starting in each local hour (24)
+    duration_counts: tuple[int, ...] = ()  # runs per DURATION_EDGES_S bucket (6)
     likely_device: str | None = None  # a state device that is on suspiciously often then
     lift: float = 0.0  # how much more often than by chance
     share_on: float = 0.0  # share of occurrences during which that device was on
@@ -144,6 +153,13 @@ class Discoverer:
         ordered = sorted(values)
         return ordered[min(len(ordered) - 1, int(q * len(ordered)))]
 
+    @staticmethod
+    def _duration_counts(durations: list[float]) -> tuple[int, ...]:
+        counts = [0] * (len(DURATION_EDGES_S) + 1)
+        for value in durations:
+            counts[bisect_right(DURATION_EDGES_S, value)] += 1
+        return tuple(counts)
+
     def candidates(self, min_count: int = 2) -> list[Candidate]:
         out = []
         for group in self._groups():
@@ -162,6 +178,14 @@ class Discoverer:
                     duration_p10_s=self._percentile(durations, 0.1),
                     duration_p90_s=self._percentile(durations, 0.9),
                     starts=tuple(starts),
+                    recent=tuple(
+                        (p.start_ts, p.duration_s, p.level_w)
+                        for p in sorted(group, key=lambda p: -p.start_ts)[:RECENT_OCCURRENCES]
+                    ),
+                    hour_counts=tuple(
+                        sum(1 for t in starts if hour_of_day(t) == h) for h in range(24)
+                    ),
+                    duration_counts=self._duration_counts(durations),
                 )
             )
         return sorted(out, key=lambda c: c.count, reverse=True)

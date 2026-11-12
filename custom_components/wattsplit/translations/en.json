@@ -185,7 +185,7 @@
         "step": {
           "init": {
             "title": "Recurring load of about {level} W",
-            "description": "WattSplit saw a load of about {level} W switch on {count} times over {days} days, about {minutes} minutes each, around {hour}h, and none of your appliances explains it. What is it?",
+            "description": "WattSplit saw a load of about {level} W switch on {count} times over {days} days, about {minutes} minutes each, around {hour}h, and none of your appliances explains it. What is it?\n\nMost recent runs (start–end, length, power):\n{recent}",
             "data": {
               "action": "What is it?"
             }
@@ -217,7 +217,7 @@
         "step": {
           "init": {
             "title": "Recurring load of about {level} W",
-            "description": "WattSplit saw a load of about {level} W switch on {count} times over {days} days, about {minutes} minutes each, around {hour}h. {likely} was on in {share}% of those times, far more often than usual at that time of day. If it is part of {likely} (for example its compressor cycling), WattSplit will count it as its own while it runs. What is it?",
+            "description": "WattSplit saw a load of about {level} W switch on {count} times over {days} days, about {minutes} minutes each, around {hour}h. {likely} was on in {share}% of those times, far more often than usual at that time of day. If it is part of {likely} (for example its compressor cycling), WattSplit will count it as its own while it runs. What is it?\n\nMost recent runs (start–end, length, power):\n{recent}",
             "data": {
               "action": "What is it?"
             }
@@ -249,7 +249,7 @@
         "step": {
           "init": {
             "title": "Recurring load of about {level} W",
-            "description": "WattSplit saw a load of about {level} W switch on {count} times over {days} days, about {minutes} minutes each, at {hours} different hours of the day, and none of your appliances explains it. What is it?",
+            "description": "WattSplit saw a load of about {level} W switch on {count} times over {days} days, about {minutes} minutes each, at {hours} different hours of the day, and none of your appliances explains it. What is it?\n\nMost recent runs (start–end, length, power):\n{recent}",
             "data": {
               "action": "What is it?"
             }
@@ -281,7 +281,7 @@
         "step": {
           "init": {
             "title": "Recurring load of about {level} W",
-            "description": "WattSplit saw a load of about {level} W switch on {count} times over {days} days, about {minutes} minutes each, at {hours} different hours of the day. {likely} was on in {share}% of those times, far more often than usual at that time of day. If it is part of {likely} (for example its compressor cycling), WattSplit will count it as its own while it runs. What is it?",
+            "description": "WattSplit saw a load of about {level} W switch on {count} times over {days} days, about {minutes} minutes each, at {hours} different hours of the day. {likely} was on in {share}% of those times, far more often than usual at that time of day. If it is part of {likely} (for example its compressor cycling), WattSplit will count it as its own while it runs. What is it?\n\nMost recent runs (start–end, length, power):\n{recent}",
             "data": {
               "action": "What is it?"
             }
