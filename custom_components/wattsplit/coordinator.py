@@ -560,6 +560,15 @@ class WattSplitCoordinator(DataUpdateCoordinator[WattSplitData]):
                         self.log.add_edge, ev_edge, device_id
                     )
 
+        for device_id in self.diss.check_coherence(now, house):
+            _LOGGER.debug(
+                "Closed the run of %s: the house draws %.0f W, less than the run claims",
+                self.config_entry.subentries[device_id].title
+                if device_id in self.config_entry.subentries
+                else device_id,
+                house,
+            )
+
         if self._candidates_dirty and now - self._candidates_at >= CANDIDATES_EVERY_S:
             # Not on every unexplained step: the association behind it is not free.
             self._candidates = self.diss.candidates()

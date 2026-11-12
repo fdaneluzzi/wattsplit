@@ -14,10 +14,15 @@ from .models import DeviceSpec, Edge, PowerMode, Toggle
 class LatentDevice:
     """A device with no entity at all, e.g. an electric shower."""
 
+    _MIN_RUNS = 5  # closed runs before its own history can bound a run
+    _MIN_RESTART_AGE_S = 30.0  # a "restart" this soon after starting is something else
+
     def __init__(self, spec: DeviceSpec) -> None:
         self.spec = spec
         self.level_w = 0.0
         self.since: float | None = None
+        self.runs: deque[float] = deque(maxlen=50)  # durations of runs that ended normally
+        self.forced_closes = 0  # runs ended without seeing their down-step
 
     @property
     def awaiting_discovery(self) -> bool:
@@ -44,10 +49,59 @@ class LatentDevice:
                 best = (new_level, err)
         return best
 
+    def restart_match(self, delta_w: float, ts: float) -> tuple[float, float] | None:
+        """``(level_w, relative_error)`` if this rise is the device starting again.
+
+        A device that is already on cannot start: its down-step was missed (it
+        merged with another load, or was claimed by someone else). A rise the
+        size of one of its own levels is then most likely its next run, and the
+        old run must end here instead of waiting for a fall that never comes.
+        """
+        if not self.is_on or delta_w <= 0 or self.since is None:
+            return None
+        if ts - self.since < self._MIN_RESTART_AGE_S:
+            return None
+        best: tuple[float, float] | None = None
+        for level in self.spec.power_levels_w:
+            err = abs(delta_w - level) / level
+            if err <= self.spec.tolerance and (best is None or err < best[1]):
+                best = (level, err)
+        return best
+
+    def restart(self, level_w: float, ts: float) -> None:
+        """End the current run without a down-step and start a new one."""
+        self.forced_closes += 1
+        self.since = ts
+        self.level_w = level_w
+
+    def force_close(self) -> None:
+        """End the run because the house power says it cannot still be going."""
+        self.forced_closes += 1
+        self.since = None
+        self.level_w = 0.0
+
+    def run_limit_s(self) -> float | None:
+        """How long a run may last before it is surely a missed down-step.
+
+        Generous (six times the 90th percentile of its own finished runs, at
+        least 15 minutes) because it only has to catch what never ends. Runs longer
+        than the limit that still ended with a down-step are not added to those runs
+        (``apply``), so one stuck run cannot teach the device that long runs are normal.
+        """
+        if len(self.runs) < self._MIN_RUNS:
+            return None
+        ordered = sorted(self.runs)
+        p90 = ordered[min(len(ordered) - 1, int(0.9 * len(ordered)))]
+        return max(6.0 * p90, 900.0)
+
     def apply(self, new_level_w: float, ts: float) -> None:
         if new_level_w > 0 and self.level_w == 0:
             self.since = ts
         elif new_level_w == 0:
+            if self.since is not None:
+                limit = self.run_limit_s()
+                if limit is None or ts - self.since <= limit:
+                    self.runs.append(ts - self.since)
             self.since = None
         self.level_w = new_level_w
 

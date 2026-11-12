@@ -67,27 +67,31 @@ class Discoverer:
         self._edges.append(edge)
 
     def _pairs(self) -> list[_Pair]:
+        """Match each fall with the most recent unmatched rise of the same size.
+
+        Most recent, not oldest: when a fall is lost, the load's next rise and fall
+        should still pair with each other. Pairing the old rise with the later fall
+        invented runs of hours (and left the real run unpaired).
+        """
         edges = sorted(self._edges, key=lambda e: e.ts)
-        used: set[int] = set()
+        open_rises: list[Edge] = []
         pairs = []
-        for i, rise in enumerate(edges):
-            if rise.delta_w <= 0 or i in used:
+        for edge in edges:
+            if edge.delta_w > 0:
+                open_rises.append(edge)
                 continue
-            for j in range(i + 1, len(edges)):
-                fall = edges[j]
-                if fall.ts - rise.ts > self._max_duration_s:
-                    break
-                if j in used or fall.delta_w >= 0:
-                    continue
-                if abs(-fall.delta_w - rise.delta_w) <= self._tol * rise.delta_w:
-                    used.update((i, j))
+            open_rises = [r for r in open_rises if edge.ts - r.ts <= self._max_duration_s]
+            for k in range(len(open_rises) - 1, -1, -1):
+                rise = open_rises[k]
+                if abs(-edge.delta_w - rise.delta_w) <= self._tol * rise.delta_w:
+                    del open_rises[k]
                     pairs.append(
                         _Pair(
-                            (rise.delta_w - fall.delta_w) / 2,
+                            (rise.delta_w - edge.delta_w) / 2,
                             rise.ts,
-                            fall.ts - rise.ts,
+                            edge.ts - rise.ts,
                             rise,
-                            fall,
+                            edge,
                         )
                     )
                     break

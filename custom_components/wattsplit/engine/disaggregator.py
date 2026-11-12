@@ -48,6 +48,13 @@ class Disaggregator:
 
     _GUARD_S = 5.0
     _MIN_SAMPLES = 4
+    # An inferred run cannot draw more than the whole home does. If the home draws
+    # less than this share of what the running inferred devices claim, for this long,
+    # a down-step was missed and the largest run is closed.
+    _INCOHERENT_FRACTION = 0.5
+    _INCOHERENT_S = 45.0
+    # Closing an open run is evidence a state device's claim must beat by this factor.
+    _CLOSE_BONUS = 0.5
     _MIN_REMAINDER_W = 60.0  # what is left of a split edge below this is noise
 
     def __init__(
@@ -83,6 +90,7 @@ class Disaggregator:
         self._on_intervals: dict[str, list[tuple[float, float]]] = {d: [] for d in self._state}
         self._t_first: float | None = None
         self._t_last = 0.0
+        self._incoherent_since: float | None = None
 
     # -- state changes and samples --------------------------------------------
 
@@ -271,21 +279,75 @@ class Disaggregator:
             for dev in self._state.values()
             if (err := dev.offer(edge)) is not None
         ]
-        if claims:
-            return min(claims, key=lambda c: c[0])[1].spec.device_id
 
-        best: tuple[LatentDevice, float, float] | None = None
+        # (device, new level, relative error, restarts a run whose fall was missed)
+        hits: list[tuple[LatentDevice, float, float, bool]] = []
         for dev in self._latent.values():
             m = dev.match(edge.delta_w)
-            if m and (best is None or m[1] < best[2]):
-                best = (dev, m[0], m[1])
-        if best:
-            best[0].apply(best[1], edge.ts)
-            return best[0].spec.device_id
+            if m:
+                hits.append((dev, m[0], m[1], False))
+            elif (r := dev.restart_match(edge.delta_w, edge.ts)) is not None:
+                hits.append((dev, r[0], r[1], True))
+        closing = [h for h in hits if h[1] == 0.0 and not h[3]]
+
+        if claims:
+            err, state_dev = min(claims, key=lambda c: c[0])
+            # An edge that ends a run we know is open is strong evidence; a state
+            # device takes it only when its own match is clearly better.
+            rival = min(closing, key=lambda h: h[2], default=None)
+            if rival is None or err <= rival[2] * self._CLOSE_BONUS:
+                return state_dev.spec.device_id
+            hits = [rival]
+
+        if hits:
+            dev, level, _, restart = min(hits, key=lambda h: h[2])
+            if restart:
+                dev.restart(level, edge.ts)
+            else:
+                dev.apply(level, edge.ts)
+            return dev.spec.device_id
 
         if discover:
             self.discovery.add(edge)
         return None
+
+    # -- consistency with the whole home ---------------------------------------------
+
+    def check_coherence(self, ts: float, house_w: float | None) -> list[str]:
+        """End inferred runs the whole-home power says cannot be going on.
+
+        Edges can be missed (a fall that merged with another load, or was claimed by
+        a state device), and an inferred device with no entity would then stay "on"
+        for hours, inflating energy and zeroing the untracked power. Two things end
+        such a run: the home drawing far less than the running inferred devices
+        claim (a load cannot exceed the total), and a run lasting far longer than
+        any this device has finished. Returns the ids of the devices closed.
+        """
+        closed: list[str] = []
+        if house_w is None:
+            return closed
+        for dev in self._latent.values():
+            limit = dev.run_limit_s()
+            if dev.is_on and dev.since is not None and limit and ts - dev.since > limit:
+                dev.force_close()
+                closed.append(dev.spec.device_id)
+
+        running = sorted(
+            (d for d in self._latent.values() if d.is_on), key=lambda d: -d.level_w
+        )
+        if running and house_w < self._INCOHERENT_FRACTION * sum(d.level_w for d in running):
+            if self._incoherent_since is None:
+                self._incoherent_since = ts
+            if ts - self._incoherent_since >= self._INCOHERENT_S:
+                for dev in running:
+                    if house_w >= self._INCOHERENT_FRACTION * sum(d.level_w for d in running if d.is_on):
+                        break
+                    dev.force_close()
+                    closed.append(dev.spec.device_id)
+                self._incoherent_since = None
+        else:
+            self._incoherent_since = None
+        return closed
 
     # -- discovery, specs, estimates -----------------------------------------------
 
@@ -418,7 +480,13 @@ class Disaggregator:
         return {
             "state_devices": {k: v.describe() for k, v in self._state.items()},
             "latent_devices": {
-                k: {"levels_w": list(v.spec.power_levels_w), "on": v.is_on}
+                k: {
+                    "levels_w": list(v.spec.power_levels_w),
+                    "on": v.is_on,
+                    "finished_runs": len(v.runs),
+                    "forced_closes": v.forced_closes,
+                    "run_limit_min": None if v.run_limit_s() is None else round(v.run_limit_s() / 60),
+                }
                 for k, v in self._latent.items()
             },
             "channels_with_samples": sorted(self._samples),
