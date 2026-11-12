@@ -327,8 +327,7 @@ class Disaggregator:
         if house_w is None:
             return closed
         for dev in self._latent.values():
-            limit = dev.run_limit_s()
-            if dev.is_on and dev.since is not None and limit and ts - dev.since > limit:
+            if dev.is_on and dev.since is not None and ts - dev.since > dev.run_limit_s():
                 dev.force_close()
                 closed.append(dev.spec.device_id)
 
@@ -485,7 +484,7 @@ class Disaggregator:
                     "on": v.is_on,
                     "finished_runs": len(v.runs),
                     "forced_closes": v.forced_closes,
-                    "run_limit_min": None if v.run_limit_s() is None else round(v.run_limit_s() / 60),
+                    "run_limit_min": round(v.run_limit_s() / 60),
                 }
                 for k, v in self._latent.items()
             },

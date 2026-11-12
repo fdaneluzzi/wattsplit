@@ -101,19 +101,57 @@ def test_a_run_far_longer_than_any_it_finished_is_closed_even_if_the_house_is_bu
         diss.on_edge(Edge(t + 300, -1340.0, t + 300))
         t += 3600
     limit = diss._latent["pump"].run_limit_s()
-    assert limit == pytest.approx(1800.0)  # six times 5 minutes
+    assert limit == pytest.approx(2400.0)  # eight times the 5-minute median
 
     diss.on_edge(Edge(t, 1340.0, t))
     assert diss.check_coherence(t + limit - 10, 3000.0) == []
     assert diss.check_coherence(t + limit + 10, 3000.0) == ["pump"]
 
 
-def test_there_is_no_run_limit_before_enough_runs_have_finished():
+def test_a_device_with_no_history_is_capped_at_the_default_limit():
     diss = _pump()
-    for k in range(3):
+    for k in range(3):  # three runs: not enough history yet
         diss.on_edge(Edge(1000 + k * 600, 1340.0, 0))
         diss.on_edge(Edge(1300 + k * 600, -1340.0, 0))
-    assert diss._latent["pump"].run_limit_s() is None
+    limit = diss._latent["pump"].run_limit_s()
+    assert limit == pytest.approx(7200.0)
+
+    t = 10_000.0
+    diss.on_edge(Edge(t, 1340.0, t))
+    # even with a busy house, a run of two hours and a bit is a missed down-step
+    assert diss.check_coherence(t + 7_000, 3000.0) == []
+    assert diss.check_coherence(t + 7_300, 3000.0) == ["pump"]
+
+
+def test_a_stuck_run_among_the_first_few_does_not_raise_the_limit_for_good():
+    diss = _pump()
+    t = 1000.0
+    for duration in (300, 300, 300, 300, 6_000):  # the last one ended by chance, 100 minutes
+        diss.on_edge(Edge(t, 1340.0, t))
+        diss.on_edge(Edge(t + duration, -1340.0, t + duration))
+        t += 10_000
+    # median and third quartile ignore it: the limit stays near the normal runs
+    assert diss._latent["pump"].run_limit_s() == pytest.approx(2400.0)
+
+
+def test_a_real_long_cycle_teaches_the_limit_but_scattered_stuck_runs_do_not():
+    def build(long_runs):
+        diss = _pump()
+        t = 1000.0
+        for _ in range(6):
+            diss.on_edge(Edge(t, 1340.0, t))
+            diss.on_edge(Edge(t + 300, -1340.0, t + 300))
+            t += 10_000
+        for duration in long_runs:
+            diss.on_edge(Edge(t, 1340.0, t))
+            diss.on_edge(Edge(t + duration, -1340.0, t + duration))
+            t += 100_000
+        return diss._latent["pump"].run_limit_s()
+
+    base = build([])
+    assert build([9_000, 9_600, 10_200]) == pytest.approx(1.3 * 10_200)  # similar: real
+    assert build([4_000, 20_000, 9_000]) == pytest.approx(base)  # scattered: stuck
+    assert build([9_000, 9_600]) == pytest.approx(base)  # two are not enough
 
 
 def test_a_lost_fall_does_not_invent_a_run_of_hours():

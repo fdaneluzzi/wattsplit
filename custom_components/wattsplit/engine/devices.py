@@ -15,6 +15,13 @@ class LatentDevice:
     """A device with no entity at all, e.g. an electric shower."""
 
     _MIN_RUNS = 5  # closed runs before its own history can bound a run
+    # Until it has that history a run is capped at this long: nothing that runs on a
+    # kitchen counter or in a utility room is meant to stay on for hours unseen.
+    DEFAULT_RUN_LIMIT_S = 7200.0
+    # Runs past the limit that still ended with a down-step are real if several of
+    # them last about the same (a long cycle), and stuck if they are all over the place.
+    _OVERLONG_NEEDED = 3
+    _OVERLONG_SPREAD = 2.0
     _MIN_RESTART_AGE_S = 30.0  # a "restart" this soon after starting is something else
 
     def __init__(self, spec: DeviceSpec) -> None:
@@ -23,6 +30,7 @@ class LatentDevice:
         self.since: float | None = None
         self.runs: deque[float] = deque(maxlen=50)  # durations of runs that ended normally
         self.forced_closes = 0  # runs ended without seeing their down-step
+        self.overlong: deque[float] = deque(maxlen=5)  # ended by a down-step past the limit
 
     @property
     def awaiting_discovery(self) -> bool:
@@ -80,28 +88,38 @@ class LatentDevice:
         self.since = None
         self.level_w = 0.0
 
-    def run_limit_s(self) -> float | None:
+    def run_limit_s(self) -> float:
         """How long a run may last before it is surely a missed down-step.
 
-        Generous (six times the 90th percentile of its own finished runs, at
-        least 15 minutes) because it only has to catch what never ends. Runs longer
-        than the limit that still ended with a down-step are not added to those runs
-        (``apply``), so one stuck run cannot teach the device that long runs are normal.
+        With no history (fewer than five finished runs) it is ``DEFAULT_RUN_LIMIT_S``.
+        After that it follows the device's own runs, using the median and the third
+        quartile rather than the largest values, so that a stuck run among the first
+        few cannot raise it for good: at least 15 minutes, eight times the median,
+        twice the third quartile. A device whose real cycle is longer than that
+        teaches it by ending three similar runs past the limit.
         """
         if len(self.runs) < self._MIN_RUNS:
-            return None
-        ordered = sorted(self.runs)
-        p90 = ordered[min(len(ordered) - 1, int(0.9 * len(ordered)))]
-        return max(6.0 * p90, 900.0)
+            limit = self.DEFAULT_RUN_LIMIT_S
+        else:
+            ordered = sorted(self.runs)
+            mid = median(ordered)
+            q3 = ordered[min(len(ordered) - 1, int(0.75 * len(ordered)))]
+            limit = max(900.0, 8.0 * mid, 2.0 * q3)
+        recent = list(self.overlong)[-self._OVERLONG_NEEDED :]
+        if len(recent) == self._OVERLONG_NEEDED and max(recent) <= self._OVERLONG_SPREAD * min(recent):
+            limit = max(limit, 1.3 * max(recent))
+        return limit
 
     def apply(self, new_level_w: float, ts: float) -> None:
         if new_level_w > 0 and self.level_w == 0:
             self.since = ts
         elif new_level_w == 0:
             if self.since is not None:
-                limit = self.run_limit_s()
-                if limit is None or ts - self.since <= limit:
-                    self.runs.append(ts - self.since)
+                duration = ts - self.since
+                if duration <= self.run_limit_s():
+                    self.runs.append(duration)
+                else:
+                    self.overlong.append(duration)
             self.since = None
         self.level_w = new_level_w
 

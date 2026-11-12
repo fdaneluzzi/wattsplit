@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.5.2 - 2026-11-12
+
+- Run limit of an appliance with no entity: until it has finished five runs it is capped at 2 hours (it used to have no limit), and afterwards the limit follows the median and third quartile of its own runs (at least 15 minutes, eight times the median) instead of the 90th percentile, so a stuck run among the first few cannot raise it for good. Three similar runs that end by a down-step past the limit teach it a real long cycle. Suggested by Squixx on issue #3.
+
 ## 0.5.1 - 2026-11-12
 
 - Fix: an appliance with no entity could stay "on" for hours after a missed down-step (issue #3), inflating its energy and zeroing the untracked power. Now a rise of the appliance's own size while it is "on" starts a new run, an inferred run is closed when the whole-home power is far below what the running inferred appliances claim, and a run far longer than any it has finished is closed. A closing step also goes to an open run over a weaker claim by an appliance with an entity.
