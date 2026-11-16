@@ -234,3 +234,17 @@ def test_log_roundtrips_channel_parts_and_migrates_old_files(tmp_path):
     (first, _), (second, dev) = log.edges()
     assert first.parts == () and first.delta_w == 300
     assert second.parts == (("a", 2750.0), ("b", 2750.0)) and dev == "shower"
+
+
+def test_assigning_a_second_load_adds_a_level_instead_of_replacing_the_first():
+    # issue #6: a hob told about its 2.2 kW level, then its 450 W and 680 W ones
+    diss = Disaggregator([DeviceSpec("hob", "Hob")])
+    assert diss.assign_candidate("hob", 2215.0) == (2215.0,)
+    assert diss.assign_candidate("hob", 453.0) == (453.0, 2215.0)
+    assert diss.assign_candidate("hob", 683.0) == (453.0, 683.0, 2215.0)
+    assert diss.spec("hob").power_levels_w == (453.0, 683.0, 2215.0)
+
+
+def test_assigning_a_level_it_already_has_does_not_add_it_twice():
+    diss = Disaggregator([DeviceSpec("hob", "Hob", power_levels_w=(2200.0,))])
+    assert diss.assign_candidate("hob", 2260.0) == (2200.0,)

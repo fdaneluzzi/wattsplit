@@ -447,10 +447,21 @@ class Disaggregator:
             )
         return candidate
 
-    def assign_candidate(self, device_id: str, level_w: float) -> None:
-        """Give a waiting latent device the power level the user picked."""
-        self._latent[device_id].set_levels((level_w,))
+    def assign_candidate(self, device_id: str, level_w: float) -> tuple[float, ...]:
+        """Give a latent device the power level the user picked, keeping its others.
+
+        An appliance with several levels (a hob on low, medium and high) is told one
+        at a time, so each answer adds to what it already knows. A level already
+        covered by one it has (within its tolerance) is not added twice. Returns the
+        levels it now has.
+        """
+        dev = self._latent[device_id]
+        levels = dev.spec.power_levels_w
+        if not any(abs(known - level_w) <= dev.spec.tolerance * known for known in levels):
+            levels = tuple(sorted({*levels, level_w}))
+        dev.set_levels(levels)
         self.discovery.consume(level_w)
+        return levels
 
     def spec(self, device_id: str) -> DeviceSpec:
         """Current spec of a device (reflects pins and assigned candidates)."""

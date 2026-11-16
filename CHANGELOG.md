@@ -1,6 +1,8 @@
 # Changelog
 
-## Unreleased
+## 0.5.3 - 2026-11-16
+
+- Fix: answering a discovered load with "one of my appliances" replaced the appliance's power levels with the new one instead of adding it, so every answer undid the previous one (issue #6). The levels are now merged; a level the appliance already covers is not added twice.
 
 - Discovered loads: the inbox now pairs a rise with a fall only when they share the same phases, preferring the rise whose phases look most like the fall's (a rise and a fall that share almost no phase are different loads), and a group whose runs overlap in time is no longer offered as one load: one appliance cannot be on twice at once. On one house this removed a third of the pairs found by size alone. The `Discovered loads` sensor shows `overlapping_runs_share` per load.
 

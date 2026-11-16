@@ -684,12 +684,12 @@ class WattSplitCoordinator(DataUpdateCoordinator[WattSplitData]):
             raise ServiceValidationError(
                 "Candidates can only be assigned to latent appliances"
             )
-        self.diss.assign_candidate(device_id, level_w)
+        levels = self.diss.assign_candidate(device_id, level_w)
         self._persist(
             device_id,
             **{
                 CONF_POWER_MODE: PowerMode.KNOWN.value,
-                CONF_POWER_LEVELS: format_levels((level_w,)),
+                CONF_POWER_LEVELS: format_levels(tuple(round(level) for level in levels)),
             },
         )
 
